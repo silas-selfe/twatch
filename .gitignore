@@ -1,0 +1,16 @@
+# environment & caches
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# model weights (auto-downloaded by watch.py on first run)
+yolo11s.pt
+*.pt
+
+# event snapshots: 3+ GB of images, privacy-sensitive -- stays local
+snapshots/
+
+# sqlite sidecars (transient; traffic.db itself IS committed)
+*.db-wal
+*.db-shm
