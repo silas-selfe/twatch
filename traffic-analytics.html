@@ -1,0 +1,531 @@
+<title>Road Traffic Analytics &#8212; Window Camera</title>
+<style>
+  :root {
+    --page: #f9f9f7; --surface: #fcfcfb;
+    --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,.10);
+    --vol: #2a78d6; --part: #c3c2b7;
+    --d-fri: #2a78d6; --d-sat: #1baf7a; --d-sun: #eda100; --d-mon: #008300;
+    --ltr: #4a3aa7; --rtl: #eb6834;
+    --warn: #b97900; --warn-bg: rgba(250,178,25,.12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page: #0d0d0d; --surface: #1a1a19;
+      --ink: #ffffff; --ink2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10);
+      --vol: #3987e5; --part: #52514e;
+      --d-fri: #3987e5; --d-sat: #199e70; --d-sun: #c98500; --d-mon: #008300;
+      --ltr: #9085e9; --rtl: #d95926;
+      --warn: #fab219; --warn-bg: rgba(250,178,25,.10);
+    }
+  }
+  :root[data-theme="light"] {
+    --page: #f9f9f7; --surface: #fcfcfb;
+    --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,.10);
+    --vol: #2a78d6; --part: #c3c2b7;
+    --d-fri: #2a78d6; --d-sat: #1baf7a; --d-sun: #eda100; --d-mon: #008300;
+    --ltr: #4a3aa7; --rtl: #eb6834;
+    --warn: #b97900; --warn-bg: rgba(250,178,25,.12);
+  }
+  :root[data-theme="dark"] {
+    --page: #0d0d0d; --surface: #1a1a19;
+    --ink: #ffffff; --ink2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10);
+    --vol: #3987e5; --part: #52514e;
+    --d-fri: #3987e5; --d-sat: #199e70; --d-sun: #c98500; --d-mon: #008300;
+    --ltr: #9085e9; --rtl: #d95926;
+    --warn: #fab219; --warn-bg: rgba(250,178,25,.10);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 40px 24px 64px; }
+
+  header .eyebrow {
+    font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 6px;
+  }
+  header h1 { font-size: 26px; font-weight: 650; margin: 0 0 4px; text-wrap: balance; }
+  header .sub { color: var(--ink2); margin: 0; font-size: 14px; }
+
+  .tiles {
+    display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr 1fr;
+    gap: 12px; margin: 28px 0 12px;
+  }
+  .tile {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px 18px 14px;
+  }
+  .tile .label { font-size: 12.5px; color: var(--ink2); margin: 0 0 2px; }
+  .tile .value { font-size: 26px; font-weight: 650; letter-spacing: -0.01em; }
+  .tile.hero .value { font-size: 48px; line-height: 1.1; }
+  .tile .note { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px 20px 14px; margin-top: 12px;
+  }
+  .card h2 { font-size: 15px; font-weight: 650; margin: 0; }
+  .card .desc { font-size: 12.5px; color: var(--muted); margin: 2px 0 10px; }
+  .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink2); padding-top: 2px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 10px; height: 10px; border-radius: 2.5px; display: inline-block; }
+  .lk { width: 14px; height: 2.5px; border-radius: 2px; display: inline-block; }
+  .dashk { width: 10px; height: 2px; display: inline-block; background: var(--muted); }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  .grid2 .card { margin-top: 0; }
+  @media (max-width: 760px) {
+    .tiles { grid-template-columns: 1fr 1fr; }
+    .tile.hero { grid-column: 1 / -1; }
+    .grid2 { grid-template-columns: 1fr; }
+  }
+
+  .chart-scroll { overflow-x: auto; }
+  svg { display: block; }
+  svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .tick { font-size: 10.5px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+  .dayband { font-size: 11.5px; fill: var(--ink2); font-weight: 600; }
+  .dlabel { font-size: 11px; font-weight: 600; fill: var(--ink2); }
+  .vlabel { font-size: 10.5px; fill: var(--ink2); font-variant-numeric: tabular-nums; }
+
+  #tooltip {
+    position: fixed; pointer-events: none; z-index: 10; display: none;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.14); padding: 8px 11px; font-size: 12.5px;
+    min-width: 150px;
+  }
+  #tooltip .tt-title { color: var(--muted); font-size: 11.5px; margin-bottom: 4px; }
+  #tooltip .tt-row { display: flex; align-items: center; gap: 7px; line-height: 1.7; }
+  #tooltip .tt-row b { font-variant-numeric: tabular-nums; }
+  #tooltip .tt-row .name { color: var(--ink2); }
+
+  .findings { margin: 6px 0 0; padding: 0; list-style: none; }
+  .findings li {
+    padding: 10px 0; border-top: 1px solid var(--grid); font-size: 14px; color: var(--ink2);
+  }
+  .findings li:first-child { border-top: none; }
+  .findings b { color: var(--ink); font-weight: 600; }
+  .findings .flag {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--warn); background: var(--warn-bg); border-radius: 5px;
+    padding: 1px 7px; margin-right: 7px; vertical-align: 1px;
+  }
+
+  details.tableview { margin-top: 12px; }
+  details.tableview summary {
+    cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--ink2);
+    padding: 12px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  }
+  details.tableview[open] summary { border-radius: 10px 10px 0 0; }
+  .tbl-wrap {
+    max-height: 380px; overflow: auto; background: var(--surface);
+    border: 1px solid var(--border); border-top: none; border-radius: 0 0 10px 10px;
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th, td { text-align: right; padding: 5px 14px; font-variant-numeric: tabular-nums; }
+  th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+  thead th {
+    position: sticky; top: 0; background: var(--surface); color: var(--muted);
+    font-weight: 600; font-size: 11.5px; border-bottom: 1px solid var(--grid);
+  }
+  tbody tr:nth-child(odd) td { background: color-mix(in srgb, var(--grid) 22%, transparent); }
+  td.partial { color: var(--warn); font-weight: 600; }
+
+  .mix-row { display: grid; grid-template-columns: 92px 64px 1fr; gap: 10px; align-items: center; padding: 5px 0; font-size: 13px; }
+  .mix-row .n { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }
+  .mix-row .name { color: var(--ink2); }
+  .mix-bar { height: 10px; border-radius: 0 3px 3px 0; background: var(--vol); min-width: 2px; }
+
+  footer { margin-top: 28px; font-size: 12px; color: var(--muted); line-height: 1.7; }
+  :focus-visible { outline: 2px solid var(--vol); outline-offset: 1px; }
+  @media (prefers-reduced-motion: no-preference) {
+    .bar, .hit { transition: opacity .12s ease; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">trafficwatch &#183; window camera</p>
+    <h1>Road traffic, Friday evening through Monday evening</h1>
+    <p class="sub">29,851 road users counted Jul 10 18:00 &#8594; Jul 13 20:59 (local) &#183; counts are unique line-crossings, one per tracked object</p>
+  </header>
+
+  <div class="tiles">
+    <div class="tile hero">
+      <p class="label">Vehicles per full day</p>
+      <div class="value" id="hero-val">9,439</div>
+      <p class="note">average of the two complete days &#8212; Sat 9,820 &#183; Sun 9,057</p>
+    </div>
+    <div class="tile">
+      <p class="label">Peak hour</p>
+      <div class="value">989</div>
+      <p class="note">vehicles, Mon 5&#8211;6 PM (~16.5/min)</p>
+    </div>
+    <div class="tile">
+      <p class="label">Quietest hour</p>
+      <div class="value">19</div>
+      <p class="note">vehicles, Sun 4&#8211;5 AM</p>
+    </div>
+    <div class="tile">
+      <p class="label">Pedestrians</p>
+      <div class="value">389</div>
+      <p class="note">1.3% of all traffic &#183; peaks weekend evenings</p>
+    </div>
+    <div class="tile">
+      <p class="label">Coverage</p>
+      <div class="value">87%</div>
+      <p class="note">65 of 75 hours complete &#183; gaps flagged below</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Traffic by day and hour</h2>
+        <p class="desc">Road users per hour (vehicles + pedestrians + bikes), grouped by day &#183; local time</p>
+      </div>
+      <div class="legend">
+        <span><span class="sw" style="background:var(--vol)"></span>Complete hour</span>
+        <span><span class="sw" style="background:var(--part)"></span>Partial coverage (undercount)</span>
+        <span><span class="dashk"></span>Collector offline</span>
+      </div>
+    </div>
+    <div class="chart-scroll"><div id="histogram"></div></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2>Daily rhythm</h2>
+          <p class="desc">Vehicles per hour of day, one line per day &#183; complete hours only</p>
+        </div>
+        <div class="legend" id="rhythm-legend"></div>
+      </div>
+      <div id="rhythm"></div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2>Direction of travel</h2>
+          <p class="desc">Average road users per complete hour, by camera-relative direction</p>
+        </div>
+        <div class="legend">
+          <span><span class="lk" style="background:var(--ltr)"></span>left &#8594; right</span>
+          <span><span class="lk" style="background:var(--rtl)"></span>right &#8594; left</span>
+        </div>
+      </div>
+      <div id="direction"></div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2>Median car speed by hour</h2>
+          <p class="desc">Pixels/second across the frame &#8212; a congestion proxy (uncalibrated)</p>
+        </div>
+      </div>
+      <div id="speed"></div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2>What crossed the line</h2>
+          <p class="desc">Counted road users by class, whole period</p>
+        </div>
+      </div>
+      <div id="mix"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><div><h2>Findings</h2></div></div>
+    <ul class="findings">
+      <li><b>This road runs ~9,000&#8211;9,800 vehicles a day</b> with a long daytime plateau rather than sharp twin rush peaks: from noon to 9 PM every day sits at 600&#8211;990 vehicles/hour, then falls off a cliff after 10 PM to under 100/hour, bottoming at ~20/hour between 3 and 5 AM.</li>
+      <li><b>Monday morning shows a clear commute signature the weekend lacks.</b> At 6 AM Monday, 553 vehicles passed &#8212; 2.9&#215; the weekend average for that hour (~190) &#8212; and 63% were headed left&#8594;right. Weekends instead ramp up gradually from 8 AM to a midday plateau.</li>
+      <li><b>Monday was the busiest day recorded</b>: its 4&#8211;6 PM hours (983 and 989 vehicles) are the two biggest of the whole period, and it logged 8,540 vehicles by 9 PM despite four missing morning hours &#8212; on pace to clear 10,000.</li>
+      <li><b>Congestion shows up in speed, not just volume.</b> Median car speed overnight is 115&#8211;127 px/s but only 57&#8211;68 px/s through the day &#8212; daytime traffic moves at roughly half the free-flow speed, slowest (57 px/s) at 6&#8211;7 PM, exactly the volume peak.</li>
+      <li><b>Daytime flow skews left&#8594;right, ~55/45</b>, most strongly in morning hours; late evening (9&#8211;10 PM) tilts back right&#8594;left. Rename the direction labels in config.yaml to real bearings to turn this into a proper inbound/outbound story.</li>
+      <li><span class="flag">&#9888; verify</span><b>Overnight direction data looks like a detection artifact, not reality.</b> Between 10 PM and 5 AM, 93&#8211;99% of counted vehicles read right&#8594;left &#8212; every night, including weekends. One travel direction is probably nearly invisible to the detector at night (headlight glare vs. taillights). Check a few overnight event snapshots before trusting any night-time direction split.</li>
+      <li><span class="flag">&#9888; gap</span><b>The collector was down Monday 8 AM&#8211;noon</b> (plus two partial hours around restarts Friday night). Those hours are flagged in every chart and excluded from per-hour averages; Monday's daily total is an undercount.</li>
+    </ul>
+  </div>
+
+  <details class="tableview">
+    <summary>Table view &#8212; full hourly data</summary>
+    <div class="tbl-wrap">
+      <table id="datatable">
+        <thead><tr><th>Day</th><th>Hour</th><th>Vehicles</th><th>Pedestrians</th><th>Bikes</th><th>Left&#8594;right</th><th>Right&#8594;left</th><th>Coverage</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </details>
+
+  <footer>
+    Source: traffic.db &#8212; 29,851 events (snapshot at Mon Jul 13, 9 PM; the collector is still running) &#183; YOLO11s + ByteTrack, one count per tracked object at a fixed
+    line, with a minimum-travel guard against parked vehicles and jitter. Coverage measured from 15-second
+    collector heartbeats; hours below 95% are flagged and excluded from per-hour averages. Directions are
+    camera-relative. Speeds are uncalibrated (px/s). Generated 2026-07-13 21:55 local.
+  </footer>
+</div>
+
+<div id="tooltip" role="status"></div>
+
+<script>
+const DATA = {"rows":[{"d":"2026-07-10","dow":"Fri","h":18,"v":240,"p":5,"b":0,"ltr":165,"rtl":80,"u":0.37},{"d":"2026-07-10","dow":"Fri","h":19,"v":734,"p":12,"b":0,"ltr":433,"rtl":313,"u":1.0},{"d":"2026-07-10","dow":"Fri","h":20,"v":683,"p":15,"b":0,"ltr":373,"rtl":325,"u":1.0},{"d":"2026-07-10","dow":"Fri","h":21,"v":352,"p":8,"b":0,"ltr":150,"rtl":210,"u":1.0},{"d":"2026-07-10","dow":"Fri","h":22,"v":32,"p":0,"b":0,"ltr":4,"rtl":28,"u":0.2},{"d":"2026-07-10","dow":"Fri","h":23,"v":0,"p":0,"b":0,"ltr":0,"rtl":0,"u":0},{"d":"2026-07-11","dow":"Sat","h":0,"v":0,"p":0,"b":0,"ltr":0,"rtl":0,"u":0},{"d":"2026-07-11","dow":"Sat","h":1,"v":18,"p":0,"b":0,"ltr":1,"rtl":17,"u":0.43},{"d":"2026-07-11","dow":"Sat","h":2,"v":57,"p":1,"b":0,"ltr":0,"rtl":58,"u":1.0},{"d":"2026-07-11","dow":"Sat","h":3,"v":31,"p":0,"b":0,"ltr":0,"rtl":31,"u":1.0},{"d":"2026-07-11","dow":"Sat","h":4,"v":26,"p":0,"b":0,"ltr":0,"rtl":26,"u":1.0},{"d":"2026-07-11","dow":"Sat","h":5,"v":24,"p":0,"b":0,"ltr":1,"rtl":23,"u":1.0},{"d":"2026-07-11","dow":"Sat","h":6,"v":213,"p":0,"b":0,"ltr":114,"rtl":99,"u":1.0},{"d":"2026-07-11","dow":"Sat","h":7,"v":313,"p":4,"b":0,"ltr":161,"rtl":156,"u":1.0},{"d":"2026-07-11","dow":"Sat","h":8,"v":372,"p":7,"b":0,"ltr":190,"rtl":189,"u":1.0},{"d":"2026-07-11","dow":"Sat","h":9,"v":551,"p":4,"b":0,"ltr":305,"rtl":250,"u":1.0},{"d":"2026-07-11","dow":"Sat","h":10,"v":628,"p":2,"b":0,"ltr":363,"rtl":267,"u":1.0},{"d":"2026-07-11","dow":"Sat","h":11,"v":677,"p":7,"b":1,"ltr":383,"rtl":302,"u":1.0},{"d":"2026-07-11","dow":"Sat","h":12,"v":692,"p":9,"b":0,"ltr":407,"rtl":294,"u":1.0},{"d":"2026-07-11","dow":"Sat","h":13,"v":673,"p":10,"b":0,"ltr":381,"rtl":302,"u":1.0},{"d":"2026-07-11","dow":"Sat","h":14,"v":754,"p":9,"b":0,"ltr":432,"rtl":331,"u":1.0},{"d":"2026-07-11","dow":"Sat","h":15,"v":725,"p":9,"b":0,"ltr":391,"rtl":343,"u":1.0},{"d":"2026-07-11","dow":"Sat","h":16,"v":757,"p":18,"b":0,"ltr":415,"rtl":360,"u":1.0},{"d":"2026-07-11","dow":"Sat","h":17,"v":703,"p":14,"b":0,"ltr":443,"rtl":274,"u":1.0},{"d":"2026-07-11","dow":"Sat","h":18,"v":696,"p":7,"b":0,"ltr":389,"rtl":314,"u":1.0},{"d":"2026-07-11","dow":"Sat","h":19,"v":653,"p":18,"b":1,"ltr":378,"rtl":294,"u":1.0},{"d":"2026-07-11","dow":"Sat","h":20,"v":647,"p":14,"b":0,"ltr":366,"rtl":295,"u":1.0},{"d":"2026-07-11","dow":"Sat","h":21,"v":394,"p":9,"b":0,"ltr":201,"rtl":202,"u":1.0},{"d":"2026-07-11","dow":"Sat","h":22,"v":115,"p":0,"b":0,"ltr":13,"rtl":102,"u":1.0},{"d":"2026-07-11","dow":"Sat","h":23,"v":101,"p":1,"b":0,"ltr":3,"rtl":99,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":0,"v":68,"p":0,"b":0,"ltr":7,"rtl":61,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":1,"v":37,"p":1,"b":0,"ltr":3,"rtl":35,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":2,"v":44,"p":0,"b":0,"ltr":0,"rtl":44,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":3,"v":22,"p":0,"b":0,"ltr":0,"rtl":22,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":4,"v":19,"p":0,"b":0,"ltr":0,"rtl":19,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":5,"v":31,"p":0,"b":0,"ltr":9,"rtl":22,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":6,"v":175,"p":1,"b":0,"ltr":111,"rtl":65,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":7,"v":208,"p":7,"b":0,"ltr":110,"rtl":105,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":8,"v":304,"p":5,"b":0,"ltr":181,"rtl":128,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":9,"v":456,"p":4,"b":0,"ltr":276,"rtl":184,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":10,"v":535,"p":7,"b":0,"ltr":320,"rtl":222,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":11,"v":605,"p":10,"b":0,"ltr":382,"rtl":233,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":12,"v":734,"p":2,"b":0,"ltr":451,"rtl":285,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":13,"v":711,"p":11,"b":0,"ltr":387,"rtl":335,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":14,"v":695,"p":7,"b":0,"ltr":425,"rtl":277,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":15,"v":620,"p":13,"b":0,"ltr":382,"rtl":251,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":16,"v":687,"p":7,"b":0,"ltr":403,"rtl":291,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":17,"v":740,"p":14,"b":0,"ltr":420,"rtl":334,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":18,"v":735,"p":17,"b":0,"ltr":458,"rtl":294,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":19,"v":624,"p":13,"b":2,"ltr":380,"rtl":259,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":20,"v":529,"p":12,"b":0,"ltr":320,"rtl":221,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":21,"v":327,"p":16,"b":0,"ltr":164,"rtl":179,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":22,"v":84,"p":1,"b":0,"ltr":5,"rtl":80,"u":1.0},{"d":"2026-07-12","dow":"Sun","h":23,"v":67,"p":0,"b":0,"ltr":1,"rtl":66,"u":1.0},{"d":"2026-07-13","dow":"Mon","h":0,"v":36,"p":0,"b":0,"ltr":1,"rtl":35,"u":1.0},{"d":"2026-07-13","dow":"Mon","h":1,"v":21,"p":0,"b":0,"ltr":1,"rtl":20,"u":1.0},{"d":"2026-07-13","dow":"Mon","h":2,"v":20,"p":0,"b":0,"ltr":1,"rtl":19,"u":1.0},{"d":"2026-07-13","dow":"Mon","h":3,"v":20,"p":0,"b":0,"ltr":1,"rtl":19,"u":1.0},{"d":"2026-07-13","dow":"Mon","h":4,"v":24,"p":0,"b":0,"ltr":1,"rtl":23,"u":1.0},{"d":"2026-07-13","dow":"Mon","h":5,"v":73,"p":0,"b":0,"ltr":26,"rtl":47,"u":1.0},{"d":"2026-07-13","dow":"Mon","h":6,"v":553,"p":2,"b":0,"ltr":351,"rtl":204,"u":1.0},{"d":"2026-07-13","dow":"Mon","h":7,"v":755,"p":3,"b":0,"ltr":480,"rtl":278,"u":0.99},{"d":"2026-07-13","dow":"Mon","h":8,"v":0,"p":0,"b":0,"ltr":0,"rtl":0,"u":0},{"d":"2026-07-13","dow":"Mon","h":9,"v":0,"p":0,"b":0,"ltr":0,"rtl":0,"u":0},{"d":"2026-07-13","dow":"Mon","h":10,"v":0,"p":0,"b":0,"ltr":0,"rtl":0,"u":0},{"d":"2026-07-13","dow":"Mon","h":11,"v":0,"p":0,"b":0,"ltr":0,"rtl":0,"u":0},{"d":"2026-07-13","dow":"Mon","h":12,"v":627,"p":4,"b":0,"ltr":383,"rtl":248,"u":0.89},{"d":"2026-07-13","dow":"Mon","h":13,"v":716,"p":9,"b":0,"ltr":440,"rtl":285,"u":1.0},{"d":"2026-07-13","dow":"Mon","h":14,"v":799,"p":6,"b":0,"ltr":464,"rtl":341,"u":1.0},{"d":"2026-07-13","dow":"Mon","h":15,"v":851,"p":4,"b":0,"ltr":448,"rtl":407,"u":1.0},{"d":"2026-07-13","dow":"Mon","h":16,"v":983,"p":12,"b":0,"ltr":536,"rtl":459,"u":1.0},{"d":"2026-07-13","dow":"Mon","h":17,"v":989,"p":4,"b":0,"ltr":590,"rtl":403,"u":1.0},{"d":"2026-07-13","dow":"Mon","h":18,"v":835,"p":2,"b":0,"ltr":439,"rtl":398,"u":1.0},{"d":"2026-07-13","dow":"Mon","h":19,"v":664,"p":7,"b":0,"ltr":340,"rtl":331,"u":1.0},{"d":"2026-07-13","dow":"Mon","h":20,"v":574,"p":5,"b":0,"ltr":320,"rtl":259,"u":1.0}],"classes":{"car":28709,"truck":629,"person":389,"bus":83,"motorcycle":37,"bicycle":4},"spdByHour":[121,120,115,115,127,126,72,66,67,66,64,64,66,60,68,68,64,60,57,62,61,111,114,114],"dirByHour":[[4.0,48.0],[2.0,27.5],[0.3,40.3],[0.3,24.0],[0.3,22.7],[12.0,30.7],[192.0,122.7],[250.3,179.7],[185.5,158.5],[290.5,217.0],[341.5,244.5],[382.5,267.5],[429.0,289.5],[402.7,307.3],[440.3,316.3],[407.0,333.7],[451.3,370.0],[484.3,337.0],[428.7,335.3],[382.8,299.2],[344.8,275.0],[171.7,197.0],[9.0,91.0],[2.0,82.5]],"nFullByHour":[2,2,3,3,3,3,3,3,2,2,2,2,2,3,3,3,3,3,3,4,4,3,2,2]};
+
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const NS = "http://www.w3.org/2000/svg";
+const el = (tag, attrs, parent) => {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+};
+const fmt = n => n.toLocaleString("en-US");
+const MONTH = { "07": "Jul" };
+const dayTitle = r => `${r.dow} ${MONTH[r.d.slice(5,7)]} ${+r.d.slice(8)}`;
+
+// ---- shared tooltip -------------------------------------------------------
+const tt = document.getElementById("tooltip");
+function showTip(x, y, title, rows) {
+  tt.textContent = "";
+  const t = document.createElement("div");
+  t.className = "tt-title"; t.textContent = title; tt.appendChild(t);
+  for (const [name, val, color] of rows) {
+    const r = document.createElement("div"); r.className = "tt-row";
+    if (color) { const k = document.createElement("span"); k.className = "lk"; k.style.background = color; r.appendChild(k); }
+    const b = document.createElement("b"); b.textContent = val; r.appendChild(b);
+    const nm = document.createElement("span"); nm.className = "name"; nm.textContent = name; r.appendChild(nm);
+    tt.appendChild(r);
+  }
+  tt.style.display = "block";
+  const w = tt.offsetWidth, h = tt.offsetHeight;
+  tt.style.left = Math.min(x + 14, innerWidth - w - 8) + "px";
+  tt.style.top = Math.max(8, y - h - 12) + "px";
+}
+const hideTip = () => { tt.style.display = "none"; };
+
+// ---- 1. hierarchical histogram -------------------------------------------
+(function histogram() {
+  const rows = DATA.rows;
+  const W = 1056, plotH = 240, padL = 44, padR = 8, axisBand = 40, padT = 18;
+  const H = padT + plotH + axisBand;
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", style: "min-width:820px" });
+  document.getElementById("histogram").appendChild(svg);
+
+  const slot = (W - padL - padR) / rows.length;
+  const barW = Math.min(24, slot - 2);
+  const yMax = 1000;
+  const y = v => padT + plotH - (v / yMax) * plotH;
+  const x = i => padL + i * slot + (slot - barW) / 2;
+
+  for (const g of [0, 250, 500, 750, 1000]) {
+    el("line", { x1: padL, x2: W - padR, y1: y(g), y2: y(g), stroke: g === 0 ? css("--axis") : css("--grid"), "stroke-width": 1 }, svg);
+    el("text", { x: padL - 7, y: y(g) + 3.5, "text-anchor": "end", class: "tick" }, svg).textContent = fmt(g);
+  }
+
+  // day groups
+  const groups = [];
+  rows.forEach((r, i) => {
+    const g = groups[groups.length - 1];
+    if (!g || g.d !== r.d) groups.push({ d: r.d, dow: r.dow, from: i, to: i });
+    else g.to = i;
+  });
+  groups.forEach((g, gi) => {
+    if (gi > 0) el("line", { x1: padL + g.from * slot, x2: padL + g.from * slot, y1: padT, y2: padT + plotH + 30, stroke: css("--grid"), "stroke-width": 1 }, svg);
+    const mid = padL + ((g.from + g.to + 1) / 2) * slot;
+    el("text", { x: mid, y: padT + plotH + 32, "text-anchor": "middle", class: "dayband" }, svg)
+      .textContent = dayTitle(rows[g.from]);
+  });
+
+  const peak = rows.reduce((a, r) => (r.v + r.p + r.b > a.v + a.p + a.b ? r : a), rows[0]);
+  const bars = [];
+  rows.forEach((r, i) => {
+    const total = r.v + r.p + r.b;
+    if (r.h % 6 === 0)
+      el("text", { x: padL + i * slot + slot / 2, y: padT + plotH + 15, "text-anchor": "middle", class: "tick" }, svg)
+        .textContent = String(r.h).padStart(2, "0");
+    let bar = null;
+    if (r.u === 0) {
+      bar = el("rect", { x: x(i), y: y(0) - 2.5, width: barW, height: 2.5, fill: css("--muted"), class: "bar" }, svg);
+    } else if (total > 0) {
+      const h = Math.max((total / yMax) * plotH, 1.5);
+      const rad = Math.min(4, barW / 2, h);
+      bar = el("path", {
+        d: `M${x(i)},${y(0)} v${-(h - rad)} q0,${-rad} ${rad},${-rad} h${barW - 2 * rad} q${rad},0 ${rad},${rad} v${h - rad} z`,
+        fill: r.u >= 0.95 ? css("--vol") : css("--part"), class: "bar",
+      }, svg);
+    }
+    if (r === peak)
+      el("text", { x: x(i) + barW / 2, y: y(r.v + r.p + r.b) - 5, "text-anchor": "middle", class: "vlabel" }, svg).textContent = fmt(peak.v + peak.p + peak.b);
+    bars.push(bar);
+
+    const hit = el("rect", { x: padL + i * slot, y: padT, width: slot, height: plotH, fill: "transparent", tabindex: 0, class: "hit", role: "img" }, svg);
+    hit.setAttribute("aria-label", `${dayTitle(r)} ${r.h}:00 \u2014 ${total} road users, coverage ${Math.round(r.u * 100)}%`);
+    const over = ev => {
+      if (bar) bar.style.opacity = 0.72;
+      const box = hit.getBoundingClientRect();
+      const cx = ev.clientX ?? box.x + box.width / 2, cy = ev.clientY ?? box.y;
+      const cov = r.u === 0 ? "offline" : Math.round(r.u * 100) + "% coverage" + (r.u < 0.95 ? " \u2014 undercount" : "");
+      showTip(cx, cy, `${dayTitle(r)} \u00b7 ${String(r.h).padStart(2, "0")}:00\u2013${String((r.h + 1) % 24).padStart(2, "0")}:00 \u00b7 ${cov}`,
+        [["vehicles", fmt(r.v), css("--vol")], ["pedestrians", fmt(r.p), null], ["bikes", fmt(r.b), null]]);
+    };
+    const out = () => { if (bar) bar.style.opacity = 1; hideTip(); };
+    hit.addEventListener("pointermove", over);
+    hit.addEventListener("pointerleave", out);
+    hit.addEventListener("focus", over);
+    hit.addEventListener("blur", out);
+  });
+})();
+
+// ---- generic line chart ---------------------------------------------------
+function lineChart(mount, series, opts) {
+  const W = 512, plotH = 200, padL = 40, padR = opts.padR ?? 44, padT = 14, axisBand = 26;
+  const H = padT + plotH + axisBand;
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%" });
+  document.getElementById(mount).appendChild(svg);
+  const x = h => padL + (h / 23) * (W - padL - padR);
+  const y = v => padT + plotH - (v / opts.yMax) * plotH;
+
+  for (const g of opts.yTicks) {
+    el("line", { x1: padL, x2: W - padR, y1: y(g), y2: y(g), stroke: g === 0 ? css("--axis") : css("--grid"), "stroke-width": 1 }, svg);
+    el("text", { x: padL - 6, y: y(g) + 3.5, "text-anchor": "end", class: "tick" }, svg).textContent = fmt(g);
+  }
+  for (let h = 0; h <= 23; h += 3)
+    el("text", { x: x(h), y: padT + plotH + 16, "text-anchor": "middle", class: "tick" }, svg)
+      .textContent = String(h).padStart(2, "0");
+
+  for (const s of series) {
+    let d = "", pen = false;
+    s.pts.forEach((v, h) => {
+      if (v == null) { pen = false; return; }
+      d += (pen ? "L" : "M") + x(h).toFixed(1) + "," + y(v).toFixed(1);
+      pen = true;
+    });
+    if (opts.area) {
+      let first = s.pts.findIndex(v => v != null), last = s.pts.length - 1;
+      while (s.pts[last] == null) last--;
+      el("path", { d: d + `L${x(last)},${y(0)}L${x(first)},${y(0)}z`, fill: s.color, opacity: 0.1 }, svg);
+    }
+    el("path", { d, fill: "none", stroke: s.color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+    let last = s.pts.length - 1;
+    while (last >= 0 && s.pts[last] == null) last--;
+    if (last >= 0) {
+      el("circle", { cx: x(last), cy: y(s.pts[last]), r: 4.5, fill: s.color, stroke: css("--surface"), "stroke-width": 2 }, svg);
+      s.endX = x(last); s.endY = y(s.pts[last]);
+    }
+  }
+  // direct end labels, collision-spread
+  const labeled = series.filter(s => s.endX != null).sort((a, b) => a.endY - b.endY);
+  for (let i = 1; i < labeled.length; i++)
+    if (labeled[i].endY - labeled[i - 1].endY < 13) labeled[i].endY = labeled[i - 1].endY + 13;
+  for (const s of labeled)
+    el("text", { x: s.endX + 8, y: s.endY + 3.5, class: "dlabel" }, svg).textContent = s.name;
+
+  // crosshair + tooltip
+  const cross = el("line", { y1: padT, y2: padT + plotH, stroke: css("--axis"), "stroke-width": 1, visibility: "hidden" }, svg);
+  const hit = el("rect", { x: padL, y: padT, width: W - padL - padR, height: plotH, fill: "transparent", tabindex: 0 }, svg);
+  hit.setAttribute("aria-label", opts.aria);
+  const over = ev => {
+    const box = hit.getBoundingClientRect();
+    const px = ev.clientX ?? box.x + box.width / 2;
+    const h = Math.max(0, Math.min(23, Math.round(((px - box.x) / box.width) * 23)));
+    cross.setAttribute("x1", x(h)); cross.setAttribute("x2", x(h));
+    cross.setAttribute("visibility", "visible");
+    showTip(px, ev.clientY ?? box.y, `${String(h).padStart(2, "0")}:00 ${opts.tipUnit}`,
+      series.map(s => [s.name, s.pts[h] == null ? "\u2014" : fmt(s.pts[h]), s.color]));
+  };
+  const out = () => { cross.setAttribute("visibility", "hidden"); hideTip(); };
+  hit.addEventListener("pointermove", over);
+  hit.addEventListener("pointerleave", out);
+  hit.addEventListener("focus", over);
+  hit.addEventListener("blur", out);
+}
+
+// ---- 2. daily rhythm ------------------------------------------------------
+(function rhythm() {
+  const days = [
+    { key: "2026-07-10", name: "Fri", color: css("--d-fri") },
+    { key: "2026-07-11", name: "Sat", color: css("--d-sat") },
+    { key: "2026-07-12", name: "Sun", color: css("--d-sun") },
+    { key: "2026-07-13", name: "Mon", color: css("--d-mon") },
+  ];
+  const series = days.map(d => ({
+    name: d.name, color: d.color,
+    pts: Array.from({ length: 24 }, (_, h) => {
+      const r = DATA.rows.find(r => r.d === d.key && r.h === h);
+      return r && r.u >= 0.95 ? r.v : null;
+    }),
+  }));
+  const legend = document.getElementById("rhythm-legend");
+  for (const d of days) {
+    const s = document.createElement("span");
+    const k = document.createElement("span"); k.className = "lk"; k.style.background = d.color;
+    s.appendChild(k); s.appendChild(document.createTextNode(d.name)); legend.appendChild(s);
+  }
+  lineChart("rhythm", series, { yMax: 1000, yTicks: [0, 250, 500, 750, 1000], tipUnit: "\u00b7 vehicles/hour", aria: "Vehicles per hour of day, one line per day" });
+})();
+
+// ---- 3. direction ---------------------------------------------------------
+lineChart("direction",
+  [
+    { name: "L \u2192 R", color: css("--ltr"), pts: DATA.dirByHour.map(d => d[0]) },
+    { name: "R \u2192 L", color: css("--rtl"), pts: DATA.dirByHour.map(d => d[1]) },
+  ],
+  { yMax: 600, yTicks: [0, 200, 400, 600], tipUnit: "\u00b7 avg road users/hour", aria: "Average road users per hour by direction of travel", padR: 50 });
+
+// ---- 4. speed -------------------------------------------------------------
+lineChart("speed",
+  [{ name: "median px/s", color: css("--vol"), pts: DATA.spdByHour }],
+  { yMax: 140, yTicks: [0, 50, 100], tipUnit: "\u00b7 median car speed", aria: "Median car speed in pixels per second by hour of day", area: true, padR: 14 });
+
+// ---- 5. class mix ---------------------------------------------------------
+(function mix() {
+  const mount = document.getElementById("mix");
+  const entries = Object.entries(DATA.classes).sort((a, b) => b[1] - a[1]);
+  const max = entries[0][1];
+  for (const [name, n] of entries) {
+    const row = document.createElement("div"); row.className = "mix-row";
+    const nm = document.createElement("span"); nm.className = "name"; nm.textContent = name;
+    const val = document.createElement("span"); val.className = "n"; val.textContent = fmt(n);
+    const barBox = document.createElement("div");
+    const bar = document.createElement("div"); bar.className = "mix-bar";
+    bar.style.width = Math.max((n / max) * 100, 0.35) + "%";
+    barBox.appendChild(bar);
+    row.appendChild(nm); row.appendChild(val); row.appendChild(barBox);
+    mount.appendChild(row);
+  }
+})();
+
+// ---- 6. table view --------------------------------------------------------
+(function table() {
+  const tb = document.querySelector("#datatable tbody");
+  for (const r of DATA.rows) {
+    const tr = document.createElement("tr");
+    const cells = [
+      `${r.dow} ${r.d.slice(5)}`, `${String(r.h).padStart(2, "0")}:00`,
+      fmt(r.v), fmt(r.p), fmt(r.b), fmt(r.ltr), fmt(r.rtl),
+      r.u === 0 ? "offline" : Math.round(r.u * 100) + "%",
+    ];
+    cells.forEach((c, i) => {
+      const td = document.createElement("td");
+      td.textContent = c;
+      if (i === 7 && r.u < 0.95) td.className = "partial";
+      tr.appendChild(td);
+    });
+    tb.appendChild(tr);
+  }
+})();
+</script>
