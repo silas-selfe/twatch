@@ -1,36 +1,32 @@
-name: Deploy analytics dashboard to GitHub Pages
+name: Sync analytics dashboard to GitHub Pages
 
 on:
   push:
     branches: [main]
+    paths: [index.html, traffic-analytics.html]
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  sync:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Stage dashboard files only
+        with:
+          fetch-depth: 0
+      - name: Copy dashboard files onto gh-pages
         run: |
-          mkdir _site
-          cp index.html traffic-analytics.html _site/
-      - uses: actions/configure-pages@v5
-        with:
-          enablement: true
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout gh-pages
+          git checkout main -- index.html traffic-analytics.html
+          git add index.html traffic-analytics.html
+          git diff --cached --quiet && echo "dashboard unchanged" && exit 0
+          git commit -m "Sync dashboard from main ${GITHUB_SHA::7}"
+          git push origin gh-pages
