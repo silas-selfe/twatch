@@ -3,7 +3,7 @@ name: Sync analytics dashboard to GitHub Pages
 on:
   push:
     branches: [main]
-    paths: [index.html, traffic-analytics.html]
+    paths: [index.html, traffic-analytics.html, pedestrians.html]
   workflow_dispatch:
 
 permissions:
@@ -25,8 +25,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout gh-pages
-          git checkout main -- index.html traffic-analytics.html
-          git add index.html traffic-analytics.html
+          git checkout main -- index.html traffic-analytics.html pedestrians.html
+          git add index.html traffic-analytics.html pedestrians.html
           git diff --cached --quiet && echo "dashboard unchanged" && exit 0
           git commit -m "Sync dashboard from main ${GITHUB_SHA::7}"
           git push origin gh-pages
