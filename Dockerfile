@@ -11,7 +11,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# CPU-only torch first: the default wheel bundles CUDA (5+ GB image) that no
+# Pi or GPU-less node can use; CPU wheels keep the image Pi-friendly
+RUN pip install --no-cache-dir torch torchvision \
+        --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir -r requirements.txt
 
 COPY watch.py db.py aggregator.py report.py config.yaml bytetrack_road.yaml ./
 
