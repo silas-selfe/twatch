@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}{{ site.label }} — twatch{% endblock %}
+{% block content %}
+<div class="wrap" style="padding-top: 20px;">
+  <header>
+    <p class="eyebrow"><a class="backlink" href="/">&#8592; fleet</a> &#183; {{ site.site_id }}</p>
+    <h1 style="font-size: 22px;">{{ site.label }}</h1>
+    <p class="sub">Local time ({{ site.timezone }}) &#183; directions: left&#8594;right = {{ site.ltr }}, right&#8594;left = {{ site.rtl }}</p>
+  </header>
+
+  <div class="tiles" id="tiles"></div>
+
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Traffic by day and hour</h2>
+        <p class="desc">Road users per hour, last 7 days</p>
+      </div>
+      <div class="legend">
+        <span><span class="sw" style="background:var(--vol)"></span>Complete hour</span>
+        <span><span class="sw" style="background:var(--part)"></span>Partial (undercount)</span>
+        <span><span class="dashk"></span>Node offline</span>
+      </div>
+    </div>
+    <div class="chart-scroll"><div id="histogram"></div></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2>Direction of travel</h2>
+          <p class="desc">Average road users per complete hour of day</p>
+        </div>
+        <div class="legend">
+          <span><span class="lk" style="background:var(--ltr)"></span>{{ site.ltr }}</span>
+          <span><span class="lk" style="background:var(--rtl)"></span>{{ site.rtl }}</span>
+        </div>
+      </div>
+      <div id="direction"></div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <h2>What crossed the line</h2>
+          <p class="desc">Counted road users by class, last 7 days</p>
+        </div>
+      </div>
+      <div id="mix"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(async function () {
+  const { dayHourHistogram, lineChart, css, fmt } = window.tw;
+  const data = await (await fetch("/api/site/{{ site.site_id }}/hours?days=7")).json();
+  const rows = data.rows;
+  if (!rows.length) {
+    document.getElementById("histogram").textContent = "No data shipped yet.";
+    return;
+  }
+
+  // tiles
+  const total = rows.reduce((a, r) => a + r.veh + r.ped + r.bike, 0);
+  const fullRows = rows.filter(r => r.u >= 0.95);
+  const peak = fullRows.length ? fullRows.reduce((a, r) => (r.veh > a.veh ? r : a)) : null;
+  const peds = rows.reduce((a, r) => a + r.ped, 0);
+  const cov = rows.length ? Math.round(100 * fullRows.length / rows.length) : 0;
+  const tiles = [
+    ["Road users, 7 days", fmt(total), "hero"],
+    ["Peak hour", peak ? fmt(peak.veh) : "—", null,
+     peak ? `vehicles, ${peak.dow} ${String(peak.h).padStart(2, "0")}:00` : ""],
+    ["Pedestrians", fmt(peds), null, "7 days"],
+    ["Coverage", cov + "%", null, `${fullRows.length} of ${rows.length} hours complete`],
+  ];
+  const grid = document.getElementById("tiles");
+  for (const [label, value, cls, note] of tiles) {
+    const d = document.createElement("div");
+    d.className = "tile" + (cls ? " " + cls : "");
+    const l = document.createElement("p"); l.className = "label"; l.textContent = label;
+    const v = document.createElement("div"); v.className = "value"; v.textContent = value;
+    d.append(l, v);
+    if (note) { const n = document.createElement("p"); n.className = "note"; n.textContent = note; d.appendChild(n); }
+    grid.appendChild(d);
+  }
+
+  dayHourHistogram("histogram", rows);
+
+  // direction by hour of day (complete hours only)
+  const byH = h => fullRows.filter(r => r.h === h);
+  const avg = (list, k) => list.length ? Math.round(list.reduce((a, r) => a + r[k], 0) / list.length * 10) / 10 : null;
+  const hrs = [...Array(24).keys()];
+  lineChart("direction", [
+    { name: "{{ site.ltr }}", color: css("--ltr"), pts: hrs.map(h => avg(byH(h), "ltr")) },
+    { name: "{{ site.rtl }}", color: css("--rtl"), pts: hrs.map(h => avg(byH(h), "rtl")) },
+  ], hrs.map(h => String(h).padStart(2, "0")), { padR: 90, tipUnit: "· avg/hour", aria: "Direction of travel by hour" });
+
+  // class mix
+  const mix = {};
+  for (const r of rows) for (const [c, n] of Object.entries(r.classes || {})) mix[c] = (mix[c] || 0) + n;
+  const entries = Object.entries(mix).sort((a, b) => b[1] - a[1]);
+  const max = entries.length ? entries[0][1] : 1;
+  const mount = document.getElementById("mix");
+  for (const [name, n] of entries) {
+    const row = document.createElement("div"); row.className = "mix-row";
+    const nm = document.createElement("span"); nm.className = "name"; nm.textContent = name;
+    const val = document.createElement("span"); val.className = "n"; val.textContent = fmt(n);
+    const box = document.createElement("div");
+    const bar = document.createElement("div"); bar.className = "mix-bar";
+    bar.style.width = Math.max((n / max) * 100, 0.35) + "%";
+    box.appendChild(bar);
+    row.append(nm, val, box);
+    mount.appendChild(row);
+  }
+})();
+</script>
+{% endblock %}
