@@ -1,0 +1,14 @@
+.venv/
+.git/
+__pycache__/
+snapshots/
+*.db
+*.db-wal
+*.db-shm
+*.xlsx
+*.pt
+*.html
+*.json
+*.sql
+site.yaml
+tracker_runtime.yaml

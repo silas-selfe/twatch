@@ -1,6 +1,12 @@
-# trafficwatch configuration
+# trafficwatch configuration -- FLEET DEFAULTS.
 # Everything that affects what the data MEANS lives here, and a snapshot of
 # this file is stored with every run so the data is always interpretable.
+# Per-deployment identity and calibration go in site.yaml (see
+# site.yaml.example), which overlays these values and survives image updates.
+
+site:
+  id: home-window          # override per deployment in site.yaml
+  label: Home window camera
 
 camera:
   source: 0            # cv2 device index; run `python watch.py --list-cameras` to probe
@@ -10,7 +16,7 @@ camera:
 model:
   weights: yolo11s.pt  # auto-downloads on first run
   imgsz: 960           # inference size; larger helps small/distant objects
-  device: mps          # Apple GPU
+  device: auto         # resolves to mps/cuda when available, else cpu (Pi)
   conf: 0.15           # low floor -- ByteTrack does its own high/low gating
 
 classes:               # COCO classes to track

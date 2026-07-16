@@ -20,6 +20,7 @@ Run:  python watch.py [--show] [--config config.yaml]
 from __future__ import annotations
 
 import argparse
+import os
 import signal
 import sys
 import threading
@@ -36,6 +37,38 @@ import db as dbm
 
 HERE = Path(__file__).resolve().parent
 
+# camera backend per platform: AVFoundation on macOS, V4L2 on Linux (Pi)
+CAP_BACKEND = (cv2.CAP_AVFOUNDATION if sys.platform == "darwin"
+               else cv2.CAP_V4L2 if sys.platform.startswith("linux")
+               else cv2.CAP_ANY)
+
+
+def _deep_merge(base: dict, overlay: dict) -> dict:
+    for k, v in overlay.items():
+        if isinstance(v, dict) and isinstance(base.get(k), dict):
+            _deep_merge(base[k], v)
+        else:
+            base[k] = v
+    return base
+
+
+def load_config(path: str) -> dict:
+    """config.yaml holds fleet defaults; a per-deployment site.yaml
+    (TW_SITE_CONFIG, default ./site.yaml) overlays site identity and
+    calibration on top. Image updates never touch the overlay."""
+    cfg = yaml.safe_load(Path(path).read_text())
+    site_path = os.environ.get("TW_SITE_CONFIG")
+    if site_path:
+        # explicitly configured -> missing file is a deployment error, and
+        # silently running with default identity/paths would corrupt data
+        if not Path(site_path).exists():
+            sys.exit(f"TW_SITE_CONFIG={site_path} does not exist -- refusing "
+                     "to run with default site identity")
+        _deep_merge(cfg, yaml.safe_load(Path(site_path).read_text()) or {})
+    elif (HERE / "site.yaml").exists():
+        _deep_merge(cfg, yaml.safe_load((HERE / "site.yaml").read_text()) or {})
+    return cfg
+
 
 # --------------------------------------------------------------------------
 # Camera: a grab thread keeps only the LATEST frame, so slow inference never
@@ -44,7 +77,7 @@ HERE = Path(__file__).resolve().parent
 # --------------------------------------------------------------------------
 class Camera:
     def __init__(self, source: int, width: int, height: int):
-        self.cap = cv2.VideoCapture(source, cv2.CAP_AVFOUNDATION)
+        self.cap = cv2.VideoCapture(source, CAP_BACKEND)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
         if not self.cap.isOpened():
@@ -116,7 +149,7 @@ class FileSource:
 
 def list_cameras():
     for idx in range(4):
-        cap = cv2.VideoCapture(idx, cv2.CAP_AVFOUNDATION)
+        cap = cv2.VideoCapture(idx, CAP_BACKEND)
         if cap.isOpened():
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
@@ -265,7 +298,10 @@ class Snapshotter:
                                          (self.max_w, int(h * scale)))
         cv2.imwrite(str(path), annotated_frame,
                     [cv2.IMWRITE_JPEG_QUALITY, 80])
-        return str(path.relative_to(HERE))
+        try:
+            return str(path.relative_to(HERE))
+        except ValueError:  # data volume outside the code dir (container)
+            return str(path)
 
     def save_scene(self, frame) -> None:
         d = self.root / "scene"
@@ -293,13 +329,29 @@ def main():
         list_cameras()
         return
 
-    cfg = yaml.safe_load(Path(args.config).read_text())
+    cfg = load_config(args.config)
     from ultralytics import YOLO  # deferred: slow import
 
     model_cfg = cfg["model"]
+    if model_cfg.get("device", "auto") == "auto":
+        import torch
+        model_cfg["device"] = ("mps" if torch.backends.mps.is_available()
+                               else "cuda" if torch.cuda.is_available()
+                               else "cpu")
+        print(f"device auto-selected: {model_cfg['device']}")
     model = YOLO(model_cfg["weights"])
     class_ids = list(cfg["classes"].values())
     id_to_name = {v: k for k, v in cfg["classes"].items()}
+
+    # site.yaml may override tracker params (e.g. track_buffer scaled to the
+    # node's real fps); materialize the merged tracker config for ultralytics
+    tracker_path = HERE / "bytetrack_road.yaml"
+    if cfg.get("tracker"):
+        merged = yaml.safe_load(tracker_path.read_text())
+        merged.update(cfg["tracker"])
+        tracker_path = Path(os.environ.get("TW_RUNTIME_DIR", str(HERE))) / "tracker_runtime.yaml"
+        tracker_path.write_text(yaml.safe_dump(merged))
+        print(f"tracker overrides applied: {cfg['tracker']}")
 
     if args.source:
         cam = FileSource(args.source)
@@ -342,7 +394,7 @@ def main():
                 frame, persist=True, verbose=False,
                 conf=model_cfg["conf"], imgsz=model_cfg["imgsz"],
                 device=model_cfg["device"], classes=class_ids,
-                tracker=str(HERE / "bytetrack_road.yaml"),
+                tracker=str(tracker_path),
             )
             frames += 1
             fps_window.append(time.time() - t0)

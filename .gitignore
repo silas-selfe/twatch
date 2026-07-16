@@ -14,3 +14,9 @@ snapshots/
 # sqlite sidecars (transient; traffic.db itself IS committed)
 *.db-wal
 *.db-shm
+
+# per-deployment files -- never committed
+site.yaml
+.env
+tracker_runtime.yaml
+.tmptest/

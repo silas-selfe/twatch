@@ -1,0 +1,40 @@
+# Per-deployment overlay -- copy to site.yaml next to config.yaml (or mount
+# into the container and point TW_SITE_CONFIG at it). Anything here overrides
+# config.yaml; everything else inherits the fleet default. Image updates
+# never touch this file: calibration is site data, not code.
+
+site:
+  id: pi-example-st        # UNIQUE per camera; also register in central sites table
+  label: "Example St, facing north"
+
+camera:
+  source: 0                # /dev/video0 on the Pi
+
+model:
+  weights: yolo11n.pt      # nano on Pi CPU; the window Mac uses 11s
+  imgsz: 640               # smaller inference on constrained hardware
+  # device: cpu            # not needed -- 'auto' resolves to cpu on a Pi
+
+counting:
+  line_frac: 0.50          # calibrate per view with --show or scene snapshots
+  min_travel_frac: 0.10
+  direction_labels:        # what camera-relative directions MEAN at this site
+    left_to_right: northbound
+    right_to_left: southbound
+
+tracker:
+  # ByteTrack's track_buffer assumes ~30 fps; on a Pi running ~5 fps a
+  # 90-frame buffer would coast lost tracks for 18 s. Scale it to ~3 s
+  # of real time at the fps the node actually achieves.
+  track_buffer: 15
+
+output:
+  # In the container, data lives on the /data volume so image updates and
+  # container recreation never touch it. (Native installs can omit these.)
+  db: /data/traffic.db
+  snapshots_dir: /data/snapshots
+
+central:
+  # Postgres DSN comes from the TW_CENTRAL_DSN env var (a secret, never in
+  # a file that could get committed). These tune the shipping cadence.
+  ship_minutes: 60         # aggregate + upsert on the hour

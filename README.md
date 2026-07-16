@@ -4,6 +4,16 @@ Roadside vehicle & pedestrian counter: webcam → YOLO11 + ByteTrack →
 directional line-crossing counts → SQLite. Built so the stored data
 *accurately represents the real world*, not just whatever the detector said.
 
+Now fleet-ready: each camera is a containerized **node** (Raspberry Pi or any
+Linux box) keeping full-fidelity data locally and shipping hourly summaries
+to a central Postgres (`twatch` database, `monitor_traffic` schema) with an
+idempotent store-and-forward protocol — offline nodes backfill safely when
+they reconnect. See [deploy/PI_SETUP.md](deploy/PI_SETUP.md) for bringing up
+a node, [central_schema.sql](central_schema.sql) for the central store, and
+[site.yaml.example](site.yaml.example) for per-camera identity/calibration.
+Images build multi-arch on every push (`ghcr.io/silas-selfe/twatch`);
+Watchtower on each node picks them up within 30 minutes.
+
 ## Why the numbers can be trusted
 
 | Threat to accuracy | Defense |
