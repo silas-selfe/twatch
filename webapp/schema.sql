@@ -11,8 +11,9 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- Read-only web role: sees analytics + manages logins, can never write
--- traffic data. Create the login with:
---   CREATE ROLE twatch_web LOGIN PASSWORD '...' IN ROLE tw_web;
+-- traffic data. Create the login with (NEVER commit a real password here --
+-- this file is in a public repo):
+--   CREATE ROLE twatch_web LOGIN PASSWORD '<generate one>' IN ROLE tw_web;
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'tw_web') THEN
