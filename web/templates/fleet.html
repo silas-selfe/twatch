@@ -26,7 +26,13 @@
 <script>
 (async function () {
   const { lineChart, css, fmt } = window.tw;
-  const data = await (await fetch("/api/fleet")).json();
+  const resp = await fetch("/api/fleet");
+  if (!resp.ok) {
+    document.getElementById("trend").textContent =
+      "Could not load fleet data (HTTP " + resp.status + ") — check the web role's grants and CloudWatch logs.";
+    return;
+  }
+  const data = await resp.json();
 
   const grid = document.getElementById("sites");
   const now = Date.now();

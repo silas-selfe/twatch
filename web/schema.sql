@@ -21,5 +21,5 @@ BEGIN
     END IF;
 END $$;
 GRANT USAGE ON SCHEMA monitor_traffic TO tw_web;
-GRANT SELECT ON sites, hourly_summary, node_heartbeat TO tw_web;
+GRANT SELECT ON sites, hourly_summary, node_heartbeat, daily_by_site TO tw_web;
 GRANT SELECT ON users TO tw_web;
