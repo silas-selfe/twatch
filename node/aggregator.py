@@ -111,6 +111,9 @@ def ship(cfg, dry_run: bool = False) -> int:
     dsn = os.environ.get("TW_CENTRAL_DSN")
     if not dsn:
         sys.exit("TW_CENTRAL_DSN is not set -- cannot ship (use --dry-run to inspect)")
+    if "YOUR-RDS-ENDPOINT" in dsn or ":PASSWORD@" in dsn:
+        sys.exit("TW_CENTRAL_DSN still contains .env.example placeholders -- "
+                 "edit node/.env with your real endpoint and password")
     import psycopg
     with psycopg.connect(dsn, connect_timeout=15) as pg:
         with pg.cursor() as cur:
