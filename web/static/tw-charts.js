@@ -157,4 +157,47 @@ function lineChart(mount, series, labels, opts = {}) {
   hit.addEventListener("blur", out);
 }
 
-window.tw = { dayHourHistogram, lineChart, css, fmt };
+/* Simple bar chart. bars: [{v,color,tick,aria,tipTitle,tipRows}] */
+function barChart(mount, bars, opts = {}) {
+  const W = opts.w ?? 512, plotH = opts.h ?? 200, padL = 44, padR = 10, padT = 16, axisBand = 30;
+  const H = padT + plotH + axisBand;
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%" });
+  document.getElementById(mount).appendChild(svg);
+  const slot = (W - padL - padR) / bars.length;
+  const barW = Math.min(24, Math.max(2, slot - 2));
+  const yMax = opts.yMax || Math.max(4, Math.ceil(Math.max(...bars.map(b => b.v), 1) * 1.15));
+  const y = v => padT + plotH - (v / yMax) * plotH;
+  const step = yMax / 4;
+  for (let g = 0; g <= yMax; g += step) {
+    el("line", { x1: padL, x2: W - padR, y1: y(g), y2: y(g), stroke: g === 0 ? css("--axis") : css("--grid"), "stroke-width": 1 }, svg);
+    el("text", { x: padL - 6, y: y(g) + 3.5, "text-anchor": "end", class: "tick" }, svg).textContent = fmt(Math.round(g));
+  }
+  const maxV = Math.max(...bars.map(b => b.v));
+  bars.forEach((b, i) => {
+    const xc = padL + i * slot + slot / 2;
+    if (b.v > 0) {
+      const hgt = Math.max((b.v / yMax) * plotH, 1.5);
+      const rad = Math.min(4, barW / 2, hgt);
+      el("path", {
+        d: `M${xc - barW / 2},${y(0)} v${-(hgt - rad)} q0,${-rad} ${rad},${-rad} h${barW - 2 * rad} q${rad},0 ${rad},${rad} v${hgt - rad} z`,
+        fill: b.color, class: "bar",
+      }, svg);
+    }
+    if (b.v === maxV && b.v > 0 && opts.labelMax)
+      el("text", { x: xc, y: y(b.v) - 5, "text-anchor": "middle", class: "vlabel" }, svg).textContent = fmt(b.v);
+    if (b.tick != null)
+      el("text", { x: xc, y: padT + plotH + 16, "text-anchor": "middle", class: "tick" }, svg).textContent = b.tick;
+    const hit = el("rect", { x: padL + i * slot, y: padT, width: slot, height: plotH, fill: "transparent", tabindex: 0 }, svg);
+    hit.setAttribute("aria-label", b.aria || "");
+    const over = ev => {
+      const box = hit.getBoundingClientRect();
+      showTip(ev.clientX ?? box.x, ev.clientY ?? box.y, b.tipTitle, b.tipRows);
+    };
+    hit.addEventListener("pointermove", over);
+    hit.addEventListener("pointerleave", hideTip);
+    hit.addEventListener("focus", over);
+    hit.addEventListener("blur", hideTip);
+  });
+}
+
+window.tw = { dayHourHistogram, lineChart, barChart, css, fmt };

@@ -188,7 +188,7 @@ def api_site_hours(request: Request, site_id: str, days: int = 7):
         h = hours.setdefault(k, {"d": d, "dow": dow, "h": hr, "veh": 0,
                                  "ped": 0, "bike": 0, "ltr": 0, "rtl": 0,
                                  "u": round(uptime / 100, 2), "classes": {},
-                                 "spd": None})
+                                 "spd": None, "pedSpd": None})
         if cls == "__coverage__":
             continue
         h["classes"][cls] = h["classes"].get(cls, 0) + n
@@ -204,6 +204,8 @@ def api_site_hours(request: Request, site_id: str, days: int = 7):
             h["rtl"] += n
         if cls == "car" and med is not None:
             h["spd"] = med if h["spd"] is None else h["spd"]
+        if cls == "person" and med is not None:
+            h["pedSpd"] = med
     return {"rows": list(hours.values())}
 
 
