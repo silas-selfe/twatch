@@ -4,13 +4,8 @@ on:
   push:
     branches: [main]
     paths:
-      - "*.py"
-      - "webapp/**"
-      - config.yaml
-      - bytetrack_road.yaml
-      - requirements.txt
-      - Dockerfile
-      - Dockerfile.web
+      - "node/**"
+      - "web/**"
       - .github/workflows/build-image.yml
   workflow_dispatch:
 
@@ -33,6 +28,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
+          file: node/Dockerfile
           platforms: linux/arm64,linux/amd64
           push: true
           build-args: |
@@ -57,7 +53,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile.web
+          file: web/Dockerfile
           platforms: linux/arm64,linux/amd64
           push: true
           build-args: |

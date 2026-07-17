@@ -13,8 +13,8 @@ sudo usermod -aG docker $USER   # log out/in after this
 
 # 2. node directory
 mkdir ~/twatch && cd ~/twatch
-curl -fsSLO https://raw.githubusercontent.com/silas-selfe/twatch/main/compose.yaml
-curl -fsSL https://raw.githubusercontent.com/silas-selfe/twatch/main/site.yaml.example -o site.yaml
+curl -fsSLO https://raw.githubusercontent.com/silas-selfe/twatch/main/deploy/compose.yaml
+curl -fsSL https://raw.githubusercontent.com/silas-selfe/twatch/main/node/site.yaml.example -o site.yaml
 
 # 3. identity + calibration: edit site.yaml
 #    - site.id: unique (e.g. pi-elm-st) -- register the same id in the

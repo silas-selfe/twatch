@@ -14,7 +14,7 @@ twatch.info (DNS) -> ALB :443 (ACM cert) -> ECS Fargate task :8080 -> RDS (same 
 ## 1. Database roles (once, as admin)
 
 ```sql
--- read-only login for the web app (schema came from webapp/schema.sql)
+-- read-only login for the web app (schema came from web/schema.sql)
 CREATE ROLE twatch_web LOGIN PASSWORD '<generate a long one>' IN ROLE tw_web;
 ```
 
@@ -25,7 +25,7 @@ Create UI users from your laptop (writes need an admin DSN):
 
 ```bash
 TW_ADMIN_DSN='postgresql://<admin>@<rds-host>:5432/twatch?sslmode=require' \
-  .venv/bin/python -m webapp.adduser silas
+  .venv/bin/python -m web.adduser silas
 ```
 
 ## 2. Secrets (once)
@@ -68,9 +68,19 @@ validation records at your DNS host; wait for "Issued".
 - Load balancing: create an **Application Load Balancer**, listener **443**
   with the ACM cert, plus a listener 80 that redirects to 443. Target group:
   type **IP**, port 8080, health check path **`/healthz`**.
-- RDS security group: allow 5432 from the task security group. Once that
-  works, you can turn OFF the RDS "publicly accessible" flag and do admin
-  psql over a bastion/SSM tunnel -- the strictly better posture.
+- RDS security group: allow 5432 from the task security group. NOTE: keep
+  RDS "publicly accessible" ON for now -- camera nodes ship to it directly
+  from home networks. It can go private once nodes ship through an ingest
+  API instead of direct Postgres.
+
+**Secrets gotchas (learned the hard way)**
+- ValueFrom must be the FULL secret ARN (a bare name is treated as an SSM
+  parameter -> AccessDenied on ssm:GetParameters).
+- Plaintext secret -> bare ARN. Key/value secret -> ARN + `:<exact-key>::`
+  (case-sensitive, whatever the Key column shows).
+- ecsTaskExecutionRole needs an inline policy allowing
+  secretsmanager:GetSecretValue on `arn:...:secret:twatch/web/*` (the console
+  does not always add it).
 
 ## 5. twatch.info DNS
 

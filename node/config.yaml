@@ -1,0 +1,48 @@
+# trafficwatch configuration -- FLEET DEFAULTS.
+# Everything that affects what the data MEANS lives here, and a snapshot of
+# this file is stored with every run so the data is always interpretable.
+# Per-deployment identity and calibration go in site.yaml (see
+# site.yaml.example), which overlays these values and survives image updates.
+
+site:
+  id: home-window          # override per deployment in site.yaml
+  label: Home window camera
+
+camera:
+  source: 0            # cv2 device index; run `python watch.py --list-cameras` to probe
+  width: 1920
+  height: 1080
+
+model:
+  weights: yolo11s.pt  # auto-downloads on first run
+  imgsz: 960           # inference size; larger helps small/distant objects
+  device: auto         # resolves to mps/cuda when available, else cpu (Pi)
+  conf: 0.15           # low floor -- ByteTrack does its own high/low gating
+
+classes:               # COCO classes to track
+  person: 0
+  bicycle: 1
+  car: 2
+  motorcycle: 3
+  bus: 5
+  truck: 7
+
+counting:
+  line_frac: 0.50       # vertical count line, as fraction of frame width
+  min_travel_frac: 0.10 # net horizontal travel (fraction of width) a track must
+                        # accumulate before its crossing counts -- rejects parked
+                        # cars and detection jitter without undercounting slow
+                        # movers (counting is deferred until travel is met)
+  min_frames: 5         # a track must be seen this many frames to count
+  direction_labels:     # rename once you know the real-world bearing
+    left_to_right: left_to_right
+    right_to_left: right_to_left
+
+output:
+  db: data/traffic.db
+  snapshots_dir: data/snapshots
+  snapshot_events: true      # save an annotated frame for every counted event
+  snapshot_max_width: 960    # downscale event snapshots to bound disk use
+  snapshot_keep_days: 14     # older event snapshots are deleted at startup
+  scene_snapshot_minutes: 60 # periodic full-scene snapshot (camera-drift audit)
+  heartbeat_seconds: 15      # liveness record cadence (downtime vs zero traffic)

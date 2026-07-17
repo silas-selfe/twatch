@@ -1,8 +1,0 @@
-# ByteTrack settings tuned for a fixed roadside camera with tree occlusion.
-tracker_type: bytetrack
-track_high_thresh: 0.5   # first-pass association threshold
-track_low_thresh: 0.1    # second-pass rescues low-conf detections (occlusion)
-new_track_thresh: 0.6    # only confident detections may START a track (anti-ghost)
-track_buffer: 90         # frames a lost track survives (~4-6 s) -- bridges the trees
-match_thresh: 0.8
-fuse_score: true

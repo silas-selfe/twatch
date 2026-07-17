@@ -9,8 +9,8 @@ Linux box) keeping full-fidelity data locally and shipping hourly summaries
 to a central Postgres (`twatch` database, `monitor_traffic` schema) with an
 idempotent store-and-forward protocol — offline nodes backfill safely when
 they reconnect. See [deploy/PI_SETUP.md](deploy/PI_SETUP.md) for bringing up
-a node, [central_schema.sql](central_schema.sql) for the central store, and
-[site.yaml.example](site.yaml.example) for per-camera identity/calibration.
+a node, [central/schema.sql](central/schema.sql) for the central store, and
+[node/site.yaml.example](node/site.yaml.example) for per-camera identity/calibration.
 Images build multi-arch on every push (`ghcr.io/silas-selfe/twatch`);
 Watchtower on each node picks them up within 30 minutes.
 
@@ -31,8 +31,9 @@ Watchtower on each node picks them up within 30 minutes.
 ## Run
 
 ```bash
-cd ~/Documents/Projects/ObjectDetection/trafficwatch
-./run.sh              # headless collector; auto-restarts on crash, blocks idle sleep
+cd node
+cp .env.example .env  # once: add your TW_CENTRAL_DSN (node role)
+./run.sh              # collector + hourly shipper; auto-restarts, blocks idle sleep
 ./run.sh --show       # with live annotated window (press q to quit)
 ```
 
@@ -63,30 +64,32 @@ re-weighted at analysis time.
 ## Analyze
 
 ```bash
-.venv/bin/python report.py            # today's hourly table + direction totals
-.venv/bin/python report.py --days 7   # last week
-.venv/bin/python report.py --csv out.csv
+.venv/bin/python node/report.py            # today's hourly table + direction totals
+.venv/bin/python node/report.py --days 7   # last week
+.venv/bin/python node/report.py --csv out.csv
 ```
 
 Export everything to Excel (About / Events / Hourly / Daily sheets):
 
 ```bash
-.venv/bin/python export_xlsx.py            # writes traffic.xlsx
-.venv/bin/python export_xlsx.py --out ~/Desktop/traffic.xlsx
+.venv/bin/python node/export_xlsx.py       # writes node/data/traffic.xlsx
+.venv/bin/python node/export_xlsx.py --out ~/Desktop/traffic.xlsx
 ```
 
 The summary sheets use live COUNTIFS formulas over the raw Events sheet, and
 the Hourly/Daily sheets carry a measured uptime % column — hours below 100%
 undercount reality, so filter on it before comparing periods.
 
-Or query `traffic.db` directly — `events` is one row per counted road user
+Or query `node/data/traffic.db` directly — `events` is one row per counted road user
 (UTC timestamp, class, direction, confidence, duration, px/s speed, snapshot
-path). Backtest any recorded clip with `python watch.py --source clip.mp4`.
+path). Backtest any recorded clip with `python node/watch.py --source clip.mp4`.
 
-## Files
+## Layout
 
-- `watch.py` — collector (capture thread → YOLO11s on MPS → ByteTrack → counter)
-- `config.yaml` — all settings that affect what the data means
-- `bytetrack_road.yaml` — tracker tuning for occlusion-heavy fixed camera
-- `db.py` / `report.py` — storage and reporting
-- `run.sh` — supervised long-running entry point
+- `node/` — everything that runs on a camera node: collector (`watch.py`),
+  hourly shipper (`aggregator.py`), local reporting/export, node image
+- `web/` — the twatch.info app (FastAPI + the shared chart system), web image
+- `central/` — DDL for the central Postgres (`twatch` db, `monitor_traffic` schema)
+- `deploy/` — Pi node setup, ECS web deploy, docker compose for a node
+- `docs/` — the static analytics dashboards served via GitHub Pages
+- local runtime data lives in `node/data/` (snapshots gitignored)

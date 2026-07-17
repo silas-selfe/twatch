@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Fleet — twatch{% endblock %}
+{% block content %}
+<div class="wrap" style="padding-top: 20px;">
+  <header>
+    <p class="eyebrow">fleet overview</p>
+    <h1 style="font-size: 22px;">All cameras</h1>
+    <p class="sub">Counts are hourly summaries shipped by each node &#183; raw footage stays on the node</p>
+  </header>
+
+  <div class="sitegrid" id="sites"></div>
+
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Road users per day, by site</h2>
+        <p class="desc">Last 14 days, each site's local calendar day &#183; partial-coverage days undercount</p>
+      </div>
+      <div class="legend" id="trend-legend"></div>
+    </div>
+    <div id="trend"></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(async function () {
+  const { lineChart, css, fmt } = window.tw;
+  const data = await (await fetch("/api/fleet")).json();
+
+  const grid = document.getElementById("sites");
+  const now = Date.now();
+  for (const s of data.sites) {
+    const ageMin = s.last_seen ? (now - new Date(s.last_seen).getTime()) / 60000 : Infinity;
+    const state = ageMin < 90 ? "ok" : ageMin < 720 ? "stale" : "down";
+    const stateText = s.last_seen
+      ? (ageMin < 90 ? "reporting" : `last seen ${Math.round(ageMin / 60)}h ago`)
+      : "never reported";
+    const a = document.createElement("a");
+    a.className = "sitecard";
+    a.href = "/site/" + encodeURIComponent(s.site_id);
+    const card = document.createElement("div");
+    card.className = "card";
+    const h3 = document.createElement("h3"); h3.textContent = s.label;
+    const meta = document.createElement("p"); meta.className = "meta";
+    const dot = document.createElement("span"); dot.className = "dot " + state;
+    meta.appendChild(dot);
+    meta.appendChild(document.createTextNode(
+      `${stateText}${s.version ? " · v " + s.version : ""}`));
+    const big = document.createElement("div"); big.className = "big";
+    big.textContent = fmt(s.today);
+    const note = document.createElement("p"); note.className = "meta";
+    note.textContent = "road users today" +
+      (s.uptime_today != null ? ` · ${Math.round(s.uptime_today)}% coverage` : "");
+    card.append(h3, meta, big, note);
+    a.appendChild(card);
+    grid.appendChild(a);
+  }
+
+  // daily trend, one line per site (categorical slots in site order)
+  const slots = ["--d-fri", "--d-sat", "--d-sun", "--d-mon", "--ltr", "--rtl"];
+  const dates = [...new Set(data.daily.map(d => d.date))].sort();
+  const legend = document.getElementById("trend-legend");
+  const series = data.sites.slice(0, 6).map((s, i) => {
+    const color = css(slots[i % slots.length]);
+    const span = document.createElement("span");
+    const k = document.createElement("span"); k.className = "lk"; k.style.background = color;
+    span.appendChild(k); span.appendChild(document.createTextNode(s.site_id));
+    legend.appendChild(span);
+    return {
+      name: s.site_id, color,
+      pts: dates.map(dt => {
+        const row = data.daily.find(d => d.site_id === s.site_id && d.date === dt);
+        return row ? row.n : null;
+      }),
+    };
+  });
+  if (dates.length)
+    lineChart("trend", series, dates.map(d => d.slice(5)),
+      { w: 1056, h: 220, padR: 90, tipUnit: "· road users", aria: "Daily road users per site" });
+})();
+</script>
+{% endblock %}
