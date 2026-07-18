@@ -130,6 +130,20 @@
 {% block scripts %}
 <script>
 (async function () {
+  // ================= tabs =================
+  const views = { traffic: "view-traffic", peds: "view-peds" };
+  function applyTab() {
+    const want = location.hash === "#pedestrians" ? "peds" : "traffic";
+    for (const [k, id] of Object.entries(views)) {
+      document.getElementById(id).hidden = k !== want;
+      document.getElementById("tab-" + k).setAttribute("aria-selected", String(k === want));
+    }
+  }
+  document.getElementById("tab-traffic").addEventListener("click", () => { history.replaceState(null, "", "#"); applyTab(); });
+  document.getElementById("tab-peds").addEventListener("click", () => { history.replaceState(null, "", "#pedestrians"); applyTab(); });
+  window.addEventListener("hashchange", applyTab);
+  applyTab();
+
   const { dayHourHistogram, lineChart, barChart, css, fmt } = window.tw;
   const resp = await fetch("/api/site/{{ site.site_id }}/hours?days=14");
   if (!resp.ok) {
@@ -142,6 +156,7 @@
     document.getElementById("t-histogram").textContent = "No data shipped yet.";
     return;
   }
+  try {
   const HRS = [...Array(24).keys()];
   const hlabels = HRS.map(h => String(h).padStart(2, "0"));
   const full = all.filter(r => r.u >= 0.95);
@@ -313,20 +328,13 @@
     });
     ptb.appendChild(tr);
   }
-
-  // ================= tabs =================
-  const views = { traffic: "view-traffic", peds: "view-peds" };
-  function applyTab() {
-    const want = location.hash === "#pedestrians" ? "peds" : "traffic";
-    for (const [k, id] of Object.entries(views)) {
-      document.getElementById(id).hidden = k !== want;
-      document.getElementById("tab-" + k).setAttribute("aria-selected", String(k === want));
-    }
+  } catch (e) {
+    console.error(e);
+    const note = document.createElement("p");
+    note.className = "sub";
+    note.textContent = "A chart failed to render (" + e.message + ") — try a hard refresh; if it persists, this build has a bug.";
+    document.querySelector(".wrap").appendChild(note);
   }
-  document.getElementById("tab-traffic").addEventListener("click", () => { history.replaceState(null, "", "#"); applyTab(); });
-  document.getElementById("tab-peds").addEventListener("click", () => { history.replaceState(null, "", "#pedestrians"); applyTab(); });
-  window.addEventListener("hashchange", applyTab);
-  applyTab();
 })();
 </script>
 {% endblock %}

@@ -34,6 +34,7 @@ app.add_middleware(SessionMiddleware,
                    max_age=14 * 86400)
 app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
 templates = Jinja2Templates(directory=str(HERE / "templates"))
+templates.env.globals["v"] = os.environ.get("TW_VERSION", "dev")[:12]
 hasher = PasswordHasher()
 
 _pool: ConnectionPool | None = None
