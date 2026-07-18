@@ -36,8 +36,14 @@
   <div class="topbar">
     <a class="brand" href="/">t<span>watch</span></a>
     <div class="who">
+      {% if user %}
       <span>{{ user }}</span>
       <form method="post" action="/logout"><button>Sign out</button></form>
+      {% else %}
+      <a href="/login" style="font-size: 12.5px; font-weight: 600; color: var(--ink2);
+         text-decoration: none; background: var(--surface); border: 1px solid var(--border);
+         border-radius: 7px; padding: 5px 12px;">Sign in</a>
+      {% endif %}
     </div>
   </div>
   {% endblock %}

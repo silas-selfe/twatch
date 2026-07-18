@@ -92,16 +92,13 @@ def logout(request: Request):
 # --------------------------------------------------------------- pages ----
 @app.get("/", response_class=HTMLResponse)
 def fleet_page(request: Request):
-    if (r := guard(request)):
-        return r
+    # public: analytics are open; sign-in remains for future operator tiers
     return templates.TemplateResponse(request, "fleet.html",
                                       {"user": user_of(request)})
 
 
 @app.get("/site/{site_id}", response_class=HTMLResponse)
 def site_page(request: Request, site_id: str):
-    if (r := guard(request)):
-        return r
     with pool().connection() as con:
         row = con.execute(
             f"SELECT site_id, label, timezone, dir_ltr_label, dir_rtl_label"
@@ -127,8 +124,6 @@ def api_guard(request: Request):
 
 @app.get("/api/fleet")
 def api_fleet(request: Request):
-    if (r := api_guard(request)):
-        return r
     with pool().connection() as con:
         sites = con.execute(f"""
             SELECT s.site_id, s.label, s.timezone,
@@ -168,8 +163,6 @@ def api_fleet(request: Request):
 
 @app.get("/api/site/{site_id}/hours")
 def api_site_hours(request: Request, site_id: str, days: int = 7):
-    if (r := api_guard(request)):
-        return r
     days = max(1, min(days, 60))
     since = datetime.now(timezone.utc) - timedelta(days=days)
     with pool().connection() as con:
