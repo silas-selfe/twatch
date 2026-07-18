@@ -11,7 +11,7 @@ cd "$(dirname "$0")"
 SHIPPER_PID=""
 if [ -n "$TW_CENTRAL_DSN" ]; then
   mkdir -p data
-  ../.venv/bin/python aggregator.py --loop >> data/shipper.log 2>&1 &
+  ../.venv/bin/python -u aggregator.py --loop >> data/shipper.log 2>&1 &
   SHIPPER_PID=$!
   echo "shipper running (pid $SHIPPER_PID, log: node/data/shipper.log)"
 else

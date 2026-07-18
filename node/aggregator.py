@@ -96,7 +96,7 @@ def ship(cfg, dry_run: bool = False) -> int:
     hb_secs = cfg["output"]["heartbeat_seconds"]
     local = connect_local(cfg)
     hours = unshipped_hours(local, hb_secs)
-    if not hours:
+    if not hours and dry_run:
         print(f"[{datetime.now():%H:%M}] nothing to ship")
         return 0
 
@@ -161,7 +161,8 @@ def ship(cfg, dry_run: bool = False) -> int:
                 " VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING",
                 (site, version, n_events, round(free_gb, 1)))
             pg.commit()
-    print(f"[{datetime.now():%H:%M}] shipped {shipped} hour(s) for site {site!r}")
+    print(f"[{datetime.now():%H:%M}] shipped {shipped} hour(s) for site {site!r}"
+          if shipped else f"[{datetime.now():%H:%M}] nothing to ship; heartbeat sent")
     return shipped
 
 
