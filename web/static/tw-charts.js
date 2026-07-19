@@ -28,60 +28,61 @@ function showTip(x, y, title, rows) {
 }
 const hideTip = () => { tt().style.display = "none"; };
 
-/* Day/hour hierarchical histogram. rows: [{d,dow,h,veh,ped,bike,u}] */
-function dayHourHistogram(mount, rows, opts = {}) {
-  const W = 1056, plotH = 220, padL = 44, padR = 8, axisBand = 40, padT = 18;
+/* Banded bar chart: slots = [{band, tick, v, u, tipTitle, tipRows}].
+   Consecutive slots sharing `band` are grouped under one band label.
+   u >= 0.95 full color, 0 < u < 0.95 partial gray, u === 0 offline dash. */
+function bandedBars(mount, slots, opts = {}) {
+  const host = document.getElementById(mount);
+  host.textContent = "";
+  const W = opts.w ?? 1056, plotH = opts.h ?? 220, padL = 44, padR = 8, axisBand = 40, padT = 18;
   const H = padT + plotH + axisBand;
-  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", style: "min-width:720px" });
-  document.getElementById(mount).appendChild(svg);
-  const total = r => r.veh + r.ped + r.bike;
-  const yMax = opts.yMax || Math.max(250, Math.ceil(Math.max(...rows.map(total)) / 250) * 250);
-  const slot = (W - padL - padR) / rows.length;
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%",
+                          style: `min-width:${opts.minWidth ?? 720}px` }, null);
+  host.appendChild(svg);
+  const rawMax = Math.max(...slots.map(sl => sl.v), 1);
+  const pow = Math.pow(10, Math.floor(Math.log10(rawMax)));
+  const step = [1, 2, 2.5, 5, 10].map(m => m * pow).find(st => rawMax <= st * 4) || 10 * pow;
+  const yMax = step * 4;
+  const slot = (W - padL - padR) / slots.length;
   const barW = Math.min(24, Math.max(2, slot - 2));
   const y = v => padT + plotH - (v / yMax) * plotH;
   const x = i => padL + i * slot + (slot - barW) / 2;
-  const step = yMax / 4;
   for (let g = 0; g <= yMax; g += step) {
     el("line", { x1: padL, x2: W - padR, y1: y(g), y2: y(g), stroke: g === 0 ? css("--axis") : css("--grid"), "stroke-width": 1 }, svg);
     el("text", { x: padL - 7, y: y(g) + 3.5, "text-anchor": "end", class: "tick" }, svg).textContent = fmt(g);
   }
   const groups = [];
-  rows.forEach((r, i) => {
+  slots.forEach((sl, i) => {
     const g = groups[groups.length - 1];
-    if (!g || g.d !== r.d) groups.push({ d: r.d, dow: r.dow, from: i, to: i });
+    if (!g || g.band !== sl.band) groups.push({ band: sl.band, from: i, to: i });
     else g.to = i;
   });
   groups.forEach((g, gi) => {
     if (gi > 0) el("line", { x1: padL + g.from * slot, x2: padL + g.from * slot, y1: padT, y2: padT + plotH + 30, stroke: css("--grid"), "stroke-width": 1 }, svg);
     el("text", { x: padL + ((g.from + g.to + 1) / 2) * slot, y: padT + plotH + 32, "text-anchor": "middle", class: "dayband" }, svg)
-      .textContent = `${g.dow} ${g.d.slice(5)}`;
+      .textContent = g.band;
   });
-  const hourTickEvery = rows.length > 96 ? 12 : 6;
-  rows.forEach((r, i) => {
-    const t = total(r);
-    if (r.h % hourTickEvery === 0)
+  slots.forEach((sl, i) => {
+    if (sl.tick != null)
       el("text", { x: padL + i * slot + slot / 2, y: padT + plotH + 15, "text-anchor": "middle", class: "tick" }, svg)
-        .textContent = String(r.h).padStart(2, "0");
+        .textContent = sl.tick;
     let bar = null;
-    if (r.u === 0) {
+    if (sl.u === 0) {
       bar = el("rect", { x: x(i), y: y(0) - 2.5, width: barW, height: 2.5, fill: css("--muted"), class: "bar" }, svg);
-    } else if (t > 0) {
-      const hgt = Math.max((t / yMax) * plotH, 1.5);
+    } else if (sl.v > 0) {
+      const hgt = Math.max((sl.v / yMax) * plotH, 1.5);
       const rad = Math.min(4, barW / 2, hgt);
       bar = el("path", {
         d: `M${x(i)},${y(0)} v${-(hgt - rad)} q0,${-rad} ${rad},${-rad} h${barW - 2 * rad} q${rad},0 ${rad},${rad} v${hgt - rad} z`,
-        fill: r.u >= 0.95 ? css("--vol") : css("--part"), class: "bar",
+        fill: sl.u >= 0.95 ? css("--vol") : css("--part"), class: "bar",
       }, svg);
     }
     const hit = el("rect", { x: padL + i * slot, y: padT, width: slot, height: plotH, fill: "transparent", tabindex: 0, class: "hit" }, svg);
-    hit.setAttribute("aria-label", `${r.dow} ${r.d} ${r.h}:00 — ${t} road users`);
+    hit.setAttribute("aria-label", `${sl.band} ${sl.tick ?? ""}: ${sl.v}`);
     const over = ev => {
       if (bar) bar.style.opacity = 0.72;
       const box = hit.getBoundingClientRect();
-      const cov = r.u === 0 ? "offline" : Math.round(r.u * 100) + "% coverage" + (r.u < 0.95 ? " — undercount" : "");
-      showTip(ev.clientX ?? box.x, ev.clientY ?? box.y,
-        `${r.dow} ${r.d.slice(5)} · ${String(r.h).padStart(2, "0")}:00 · ${cov}`,
-        [["vehicles", fmt(r.veh), css("--vol")], ["pedestrians", fmt(r.ped), null], ["bikes", fmt(r.bike), null]]);
+      showTip(ev.clientX ?? box.x, ev.clientY ?? box.y, sl.tipTitle, sl.tipRows);
     };
     const out = () => { if (bar) bar.style.opacity = 1; hideTip(); };
     hit.addEventListener("pointermove", over);
@@ -89,6 +90,22 @@ function dayHourHistogram(mount, rows, opts = {}) {
     hit.addEventListener("focus", over);
     hit.addEventListener("blur", out);
   });
+}
+
+/* Day/hour histogram: adapter over bandedBars. rows: [{d,dow,h,veh,ped,bike,u}] */
+function dayHourHistogram(mount, rows, opts = {}) {
+  const hourTickEvery = rows.length > 96 ? 12 : 6;
+  bandedBars(mount, rows.map(r => {
+    const t = r.veh + r.ped + r.bike;
+    const cov = r.u === 0 ? "offline" : Math.round(r.u * 100) + "% coverage" + (r.u < 0.95 ? " — undercount" : "");
+    return {
+      band: `${r.dow} ${r.d.slice(5)}`,
+      tick: r.h % hourTickEvery === 0 ? String(r.h).padStart(2, "0") : null,
+      v: t, u: r.u,
+      tipTitle: `${r.dow} ${r.d.slice(5)} · ${String(r.h).padStart(2, "0")}:00 · ${cov}`,
+      tipRows: [["vehicles", fmt(r.veh), css("--vol")], ["pedestrians", fmt(r.ped), null], ["bikes", fmt(r.bike), null]],
+    };
+  }), { minWidth: rows.length > 200 ? 1400 : 720, ...opts });
 }
 
 /* Multi-series line chart over arbitrary x categories.
@@ -200,4 +217,4 @@ function barChart(mount, bars, opts = {}) {
   });
 }
 
-window.tw = { dayHourHistogram, lineChart, barChart, css, fmt };
+window.tw = { bandedBars, dayHourHistogram, lineChart, barChart, css, fmt };

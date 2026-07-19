@@ -163,7 +163,7 @@ def api_fleet(request: Request):
 
 @app.get("/api/site/{site_id}/hours")
 def api_site_hours(request: Request, site_id: str, days: int = 7):
-    days = max(1, min(days, 60))
+    days = max(1, min(days, 400))
     since = datetime.now(timezone.utc) - timedelta(days=days)
     with pool().connection() as con:
         rows = con.execute(f"""
