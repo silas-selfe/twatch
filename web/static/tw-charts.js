@@ -34,19 +34,30 @@ const hideTip = () => { tt().style.display = "none"; };
 function bandedBars(mount, slots, opts = {}) {
   const host = document.getElementById(mount);
   host.textContent = "";
-  const W = opts.w ?? 1056, plotH = opts.h ?? 220, padL = 44, padR = 8, axisBand = 40, padT = 18;
+  const plotH = opts.h ?? 220, padL = 44, padR = 8, axisBand = 40, padT = 18;
   const H = padT + plotH + axisBand;
-  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%",
-                          style: `min-width:${opts.minWidth ?? 720}px` }, null);
+  const nominalW = opts.w ?? 1056;
+  const x0 = padL;
+  let slot = (nominalW - padL - padR) / slots.length;
+  let W = nominalW, widthAttr = "100%", minW = opts.minWidth ?? 720;
+  if (opts.maxSlot && slot > opts.maxSlot) {
+    // few bars: pack them tight and shrink the canvas to fit (left-aligned,
+    // grows rightward as more periods accumulate) rather than stretching wide
+    slot = opts.maxSlot;
+    W = Math.round(padL + padR + slot * slots.length);
+    widthAttr = `${W}px`;
+    minW = 0;
+  }
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: widthAttr,
+                          style: minW ? `min-width:${minW}px` : "" }, null);
   host.appendChild(svg);
   const rawMax = Math.max(...slots.map(sl => sl.v), 1);
   const pow = Math.pow(10, Math.floor(Math.log10(rawMax)));
   const step = [1, 2, 2.5, 5, 10].map(m => m * pow).find(st => rawMax <= st * 4) || 10 * pow;
   const yMax = step * 4;
-  const slot = (W - padL - padR) / slots.length;
   const barW = Math.min(24, Math.max(2, slot - 2));
   const y = v => padT + plotH - (v / yMax) * plotH;
-  const x = i => padL + i * slot + (slot - barW) / 2;
+  const x = i => x0 + i * slot + (slot - barW) / 2;
   for (let g = 0; g <= yMax; g += step) {
     el("line", { x1: padL, x2: W - padR, y1: y(g), y2: y(g), stroke: g === 0 ? css("--axis") : css("--grid"), "stroke-width": 1 }, svg);
     el("text", { x: padL - 7, y: y(g) + 3.5, "text-anchor": "end", class: "tick" }, svg).textContent = fmt(g);
@@ -58,13 +69,13 @@ function bandedBars(mount, slots, opts = {}) {
     else g.to = i;
   });
   groups.forEach((g, gi) => {
-    if (gi > 0) el("line", { x1: padL + g.from * slot, x2: padL + g.from * slot, y1: padT, y2: padT + plotH + 30, stroke: css("--grid"), "stroke-width": 1 }, svg);
-    el("text", { x: padL + ((g.from + g.to + 1) / 2) * slot, y: padT + plotH + 32, "text-anchor": "middle", class: "dayband" }, svg)
+    if (gi > 0) el("line", { x1: x0 + g.from * slot, x2: x0 + g.from * slot, y1: padT, y2: padT + plotH + 30, stroke: css("--grid"), "stroke-width": 1 }, svg);
+    el("text", { x: x0 + ((g.from + g.to + 1) / 2) * slot, y: padT + plotH + 32, "text-anchor": "middle", class: "dayband" }, svg)
       .textContent = g.band;
   });
   slots.forEach((sl, i) => {
     if (sl.tick != null)
-      el("text", { x: padL + i * slot + slot / 2, y: padT + plotH + 15, "text-anchor": "middle", class: "tick" }, svg)
+      el("text", { x: x0 + i * slot + slot / 2, y: padT + plotH + 15, "text-anchor": "middle", class: "tick" }, svg)
         .textContent = sl.tick;
     let bar = null;
     if (sl.u === 0) {
@@ -77,7 +88,7 @@ function bandedBars(mount, slots, opts = {}) {
         fill: sl.u >= 0.95 ? css("--vol") : css("--part"), class: "bar",
       }, svg);
     }
-    const hit = el("rect", { x: padL + i * slot, y: padT, width: slot, height: plotH, fill: "transparent", tabindex: 0, class: "hit" }, svg);
+    const hit = el("rect", { x: x0 + i * slot, y: padT, width: slot, height: plotH, fill: "transparent", tabindex: 0, class: "hit" }, svg);
     hit.setAttribute("aria-label", `${sl.band} ${sl.tick ?? ""}: ${sl.v}`);
     const over = ev => {
       if (bar) bar.style.opacity = 0.72;

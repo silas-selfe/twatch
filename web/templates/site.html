@@ -251,12 +251,12 @@
         const u = d.hours === 0 ? 0 : d.fullH / 24;
         return {
           band: "Wk of " + MON[ws.getUTCMonth()] + " " + ws.getUTCDate(),
-          tick: d.dow === "Mon" || days.length <= 21 ? String(dUTC(d.d).getUTCDate()) : null,
+          tick: d.dow[0],   // first letter of the weekday (M T W T F S S)
           v: d.v, u: u,
           tipTitle: `${d.dow} ${d.d} \u00b7 ${d.fullH}/24 hours complete`,
           tipRows: [["road users", fmt(d.v), css("--vol")], ["pedestrians", fmt(d.ped), null]],
         };
-      }));
+      }), { maxSlot: 30 });
       return;
     }
     desc.textContent = "Road users per week, last 12 months \u00b7 gray = incomplete coverage";
