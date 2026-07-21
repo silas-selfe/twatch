@@ -20,3 +20,6 @@ site.yaml
 .env
 tracker_runtime.yaml
 .tmptest/
+
+# central-infra ops runbook -- kept local, not part of the open-source node project
+deploy/WEB_DEPLOY.md
