@@ -75,16 +75,60 @@ def load_config(path: str) -> dict:
 # builds up buffer lag -- every processed frame is "now", and its wall-clock
 # timestamp is the truth we store.
 # --------------------------------------------------------------------------
+def redact(source) -> str:
+    """Camera URLs may embed credentials -- never let them reach a log."""
+    import re
+    return re.sub(r"//[^/@]+@", "//***@", str(source))
+
+
+class PyAVCapture:
+    """Read frames from an rtsp/http URL via PyAV (its bundled FFmpeg speaks
+    RTSP; opencv-python\'s does not). Exposes the cv2.VideoCapture surface the
+    grab thread uses: isOpened / read / release."""
+
+    def __init__(self, url: str):
+        import av
+        self._av = av
+        # (open_timeout, read_timeout) seconds -> never hang on a dead camera
+        self._c = av.open(url, options={"rtsp_transport": "tcp"}, timeout=(10, 5))
+        self._gen = self._c.decode(video=0)
+
+    def isOpened(self) -> bool:
+        return self._c is not None
+
+    def read(self):
+        try:
+            frame = next(self._gen)
+            return True, frame.to_ndarray(format="bgr24")
+        except Exception:
+            return False, None  # drop/EOF -> Camera loop triggers reconnect
+
+    def release(self):
+        try:
+            self._c.close()
+        except Exception:
+            pass
+
+
+def open_source(source, width: int, height: int):
+    """Local device index -> OpenCV + platform backend; rtsp/http URL -> PyAV."""
+    if isinstance(source, str) and "://" in source:
+        return PyAVCapture(source)
+    cap = cv2.VideoCapture(source, CAP_BACKEND)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    return cap
+
+
 class Camera:
-    def __init__(self, source: int, width: int, height: int):
-        self.cap = cv2.VideoCapture(source, CAP_BACKEND)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    def __init__(self, source, width: int, height: int):
+        self.source, self.width, self.height = source, width, height
+        self.cap = open_source(source, width, height)
         if not self.cap.isOpened():
-            raise RuntimeError(f"could not open camera source {source}")
+            raise RuntimeError(f"could not open camera source {redact(source)}")
         ok, frame = self.cap.read()
         if not ok:
-            raise RuntimeError(f"camera {source} opened but returned no frame")
+            raise RuntimeError(f"camera {redact(source)} opened but returned no frame")
         self._frame = frame
         self._ts = time.time()
         self._seq = 0
@@ -94,11 +138,20 @@ class Camera:
         self._thread.start()
 
     def _loop(self):
+        fails = 0
         while not self._stop.is_set():
             ok, frame = self.cap.read()
             if not ok:
+                fails += 1
+                if fails >= 100:  # ~5s dead -> reopen (rtsp drops, NVR reboots)
+                    print(f"camera {redact(self.source)} unresponsive -- reconnecting")
+                    self.cap.release()
+                    time.sleep(2)
+                    self.cap = open_source(self.source, self.width, self.height)
+                    fails = 0
                 time.sleep(0.05)
                 continue
+            fails = 0
             with self._lock:
                 self._frame = frame
                 self._ts = time.time()
@@ -356,8 +409,9 @@ def main():
     if args.source:
         cam = FileSource(args.source)
     else:
-        cam = Camera(cfg["camera"]["source"], cfg["camera"]["width"],
-                     cfg["camera"]["height"])
+        src = os.environ.get("TW_CAMERA_SOURCE") or cfg["camera"]["source"]
+        cam = Camera(src, cfg["camera"]["width"], cfg["camera"]["height"])
+        print(f"camera source: {redact(src)}")
     frame, _ = cam.latest()
     frame_h, frame_w = frame.shape[:2]
     print(f"camera open: {frame_w}x{frame_h}")

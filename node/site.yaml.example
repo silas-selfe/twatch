@@ -8,7 +8,10 @@ site:
   label: "Example St, facing north"
 
 camera:
-  source: 0                # /dev/video0 on the Pi
+  source: 0                # local USB device index (/dev/video0 on a Pi)
+  # For an IP / security camera, DON'T put the URL here (it holds a password).
+  # Set TW_CAMERA_SOURCE in .env instead, or use discover.py -- see
+  # deploy/IP_CAMERAS.md.
 
 model:
   weights: yolo11n.pt      # nano on Pi CPU; the window Mac uses 11s

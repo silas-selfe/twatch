@@ -23,3 +23,8 @@ tracker_runtime.yaml
 
 # central-infra ops runbook -- kept local, not part of the open-source node project
 deploy/WEB_DEPLOY.md
+
+# discover.py outputs -- contain camera credentials & preview frames, keep local
+node/discovered/
+node/cameras/
+node/compose.cameras.yaml
