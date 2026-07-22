@@ -9,7 +9,11 @@ site:
   label: Home window camera
 
 camera:
-  source: 0            # cv2 device index; run `python watch.py --list-cameras` to probe
+  # 'auto' prefers an external/USB camera over a built-in laptop one.
+  # Or set a device index (0,1,...), a name substring ("USB", "Logitech"),
+  # or an rtsp:// URL. `watch.py --list-cameras` shows names;
+  # `watch.py --pick-camera` opens a click-to-select preview.
+  source: auto
   width: 1920
   height: 1080
 

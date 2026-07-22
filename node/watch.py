@@ -20,7 +20,9 @@ Run:  python watch.py [--show] [--config config.yaml]
 from __future__ import annotations
 
 import argparse
+import glob
 import os
+import re
 import signal
 import sys
 import threading
@@ -31,6 +33,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import cv2
+import numpy as np
 import yaml
 
 import db as dbm
@@ -120,6 +123,146 @@ def open_source(source, width: int, height: int):
     return cap
 
 
+# built-in / laptop cameras -- de-prioritized so 'auto' prefers an external cam
+BUILTIN_RE = re.compile(r"facetime|built[\s-]?in|isight|integrated", re.I)
+
+
+def camera_list() -> list[tuple[int, str]]:
+    """[(cv2 index, device name)] of local video cameras, best-effort named.
+    macOS: AVFoundation (index order matches cv2). Linux: /sys v4l names."""
+    if sys.platform == "darwin":
+        try:
+            import AVFoundation  # pyobjc; macOS only
+            devs = AVFoundation.AVCaptureDevice.devicesWithMediaType_(
+                AVFoundation.AVMediaTypeVideo)
+            named = [(i, str(d.localizedName())) for i, d in enumerate(devs)]
+            if named:
+                return named
+        except Exception:
+            pass  # fall through to probing
+    elif sys.platform.startswith("linux"):
+        out = []
+        for p in sorted(glob.glob("/sys/class/video4linux/video*")):
+            try:
+                idx = int(p.rsplit("video", 1)[1])
+                out.append((idx, (Path(p) / "name").read_text().strip()))
+            except Exception:
+                pass
+        if out:
+            return out
+    # fallback: probe indices, generic names
+    found = []
+    for i in range(6):
+        cap = cv2.VideoCapture(i, CAP_BACKEND)
+        if cap.isOpened():
+            found.append((i, f"camera {i}"))
+            cap.release()
+    return found
+
+
+def resolve_source(source):
+    """Turn a config source into what open_source wants:
+    int index -> itself; rtsp/http URL -> itself; 'auto' -> the external
+    camera's index (falls back to built-in); a name substring -> its index."""
+    if isinstance(source, int):
+        return source
+    s = str(source).strip()
+    if "://" in s:
+        return s
+    if s.isdigit():
+        return int(s)
+    cams = camera_list()
+    if s.lower() == "auto":
+        if not cams:
+            return 0
+        external = [i for i, n in cams if not BUILTIN_RE.search(n)]
+        chosen = external[0] if external else cams[0][0]
+        name = dict(cams).get(chosen, "?")
+        note = "external preferred" if external else "only built-in available"
+        print(f"camera auto-select: index {chosen} ({name}) [{note}]")
+        return chosen
+    for i, n in cams:  # name substring match (stable across index reordering)
+        if s.lower() in n.lower():
+            print(f"camera '{s}' -> index {i} ({n})")
+            return i
+    print(f"camera '{s}' not found among {[n for _, n in cams]}; using index 0")
+    return 0
+
+
+def set_config_source(config_path: str, value: str):
+    """Persist camera.source in config.yaml, preserving comments."""
+    text = Path(config_path).read_text()
+    new, n = re.subn(r"(?m)^(\s*source:\s*).*$",
+                     lambda m: f'{m.group(1)}"{value}"', text, count=1)
+    if n:
+        Path(config_path).write_text(new)
+
+
+def pick_camera(config_path: str):
+    """GUI: tile a live preview of every detected camera; click one (or press
+    its number) to select. Writes the choice (by name) into config.yaml."""
+    cams = camera_list()
+    if not cams:
+        print("no cameras detected")
+        return
+    TW, TH = 480, 270
+    tiles = []
+    for idx, name in cams:
+        cap = cv2.VideoCapture(idx, CAP_BACKEND)
+        frame = None
+        if cap.isOpened():
+            for _ in range(5):  # warm up; first frames are often blank
+                ok, f = cap.read()
+                if ok:
+                    frame = f
+        cap.release()
+        tiles.append((idx, name, frame))
+    cols = min(len(tiles), 2)
+    rows = (len(tiles) + cols - 1) // cols
+    canvas = np.full((rows * TH, cols * TW, 3), 30, np.uint8)
+    boxes = []
+    for k, (idx, name, frame) in enumerate(tiles):
+        r, c = divmod(k, cols)
+        x0, y0 = c * TW, r * TH
+        thumb = (cv2.resize(frame, (TW, TH)) if frame is not None
+                 else np.full((TH, TW, 3), 60, np.uint8))
+        if frame is None:
+            cv2.putText(thumb, "no preview", (20, TH // 2),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (200, 200, 200), 2)
+        canvas[y0:y0 + TH, x0:x0 + TW] = thumb
+        cv2.rectangle(canvas, (x0, y0), (x0 + TW, y0 + 26), (0, 0, 0), -1)
+        cv2.putText(canvas, f"[{k}] {name}", (8, y0 + 19),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+        cv2.rectangle(canvas, (x0, y0), (x0 + TW - 1, y0 + TH - 1), (90, 90, 90), 1)
+        boxes.append((x0, y0, x0 + TW, y0 + TH, idx, name))
+    sel = {}
+    def on_mouse(event, x, y, *_):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            for (x0, y0, x1, y1, idx, name) in boxes:
+                if x0 <= x < x1 and y0 <= y < y1:
+                    sel["v"] = (idx, name)
+    win = "twatch - click a camera to use it  (0-9 to pick, ESC to cancel)"
+    cv2.namedWindow(win)
+    cv2.setMouseCallback(win, on_mouse)
+    while True:
+        cv2.imshow(win, canvas)
+        key = cv2.waitKey(30) & 0xFF
+        if key == 27:  # ESC
+            break
+        if ord("0") <= key <= ord("9") and key - ord("0") < len(tiles):
+            t = tiles[key - ord("0")]
+            sel["v"] = (t[0], t[1])
+        if "v" in sel:
+            break
+    cv2.destroyAllWindows()
+    if "v" not in sel:
+        print("cancelled -- config unchanged")
+        return
+    idx, name = sel["v"]
+    set_config_source(config_path, name)
+    print(f"selected {name!r} (index {idx}); wrote camera.source to {config_path}")
+
+
 class Camera:
     def __init__(self, source, width: int, height: int):
         self.source, self.width, self.height = source, width, height
@@ -201,17 +344,23 @@ class FileSource:
 
 
 def list_cameras():
-    for idx in range(4):
+    cams = camera_list()
+    if not cams:
+        print("no local cameras detected")
+        return
+    print("local cameras (set camera.source to an index or a name substring):")
+    for idx, name in cams:
+        tag = " [built-in]" if BUILTIN_RE.search(name) else ""
         cap = cv2.VideoCapture(idx, CAP_BACKEND)
+        res = ""
         if cap.isOpened():
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
             ok, frame = cap.read()
             if ok:
                 h, w = frame.shape[:2]
-                print(f"  index {idx}: {w}x{h}")
-            cap.release()
-    print("done probing indices 0-3")
+                res = f"  {w}x{h}"
+        cap.release()
+        print(f"  index {idx}: {name}{tag}{res}")
+    print("'auto' (the default) prefers an external camera over the built-in one.")
 
 
 # --------------------------------------------------------------------------
@@ -371,7 +520,10 @@ def main():
     ap.add_argument("--config", default=str(HERE / "config.yaml"))
     ap.add_argument("--show", action="store_true",
                     help="display annotated live window")
-    ap.add_argument("--list-cameras", action="store_true")
+    ap.add_argument("--list-cameras", action="store_true",
+                    help="list local cameras with names, then exit")
+    ap.add_argument("--pick-camera", action="store_true",
+                    help="visual picker: click the camera to use (writes config)")
     ap.add_argument("--max-seconds", type=float, default=None,
                     help="stop after N seconds (testing)")
     ap.add_argument("--source", default=None,
@@ -380,6 +532,9 @@ def main():
 
     if args.list_cameras:
         list_cameras()
+        return
+    if args.pick_camera:
+        pick_camera(args.config)
         return
 
     cfg = load_config(args.config)
@@ -410,6 +565,7 @@ def main():
         cam = FileSource(args.source)
     else:
         src = os.environ.get("TW_CAMERA_SOURCE") or cfg["camera"]["source"]
+        src = resolve_source(src)  # name/'auto' -> index; int/URL pass through
         cam = Camera(src, cfg["camera"]["width"], cfg["camera"]["height"])
         print(f"camera source: {redact(src)}")
     frame, _ = cam.latest()
