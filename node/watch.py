@@ -163,7 +163,8 @@ def camera_list() -> list[tuple[int, str]]:
 def resolve_source(source):
     """Turn a config source into what open_source wants:
     int index -> itself; rtsp/http URL -> itself; 'auto' -> the external
-    camera's index (falls back to built-in); a name substring -> its index."""
+    camera's index (refuses if only a built-in laptop camera is present);
+    a name substring -> its index (refuses if that camera is absent)."""
     if isinstance(source, int):
         return source
     s = str(source).strip()
@@ -173,20 +174,30 @@ def resolve_source(source):
         return int(s)
     cams = camera_list()
     if s.lower() == "auto":
-        if not cams:
-            return 0
-        external = [i for i, n in cams if not BUILTIN_RE.search(n)]
-        chosen = external[0] if external else cams[0][0]
-        name = dict(cams).get(chosen, "?")
-        note = "external preferred" if external else "only built-in available"
-        print(f"camera auto-select: index {chosen} ({name}) [{note}]")
-        return chosen
+        external = [(i, n) for i, n in cams if not BUILTIN_RE.search(n)]
+        if external:
+            i, n = external[0]
+            print(f"camera auto-select: index {i} ({n})")
+            return i
+        # Only a built-in laptop camera is present. It faces the room, not a
+        # road: opening it silently would record the user AND produce junk
+        # counts. Refuse -- run.sh retries every 10s, so re-plugging the USB
+        # camera recovers on its own. Set camera.source explicitly to override.
+        avail = [n for _, n in cams] or ["(no cameras detected)"]
+        sys.exit(
+            f"camera 'auto': no external camera found (available: {avail}).\n"
+            "  -> plug the USB camera back in (run.sh will pick it up), or\n"
+            "  -> set camera.source explicitly (index / name / rtsp:// URL)\n"
+            "     if you really want the built-in camera.")
     for i, n in cams:  # name substring match (stable across index reordering)
         if s.lower() in n.lower():
             print(f"camera '{s}' -> index {i} ({n})")
             return i
-    print(f"camera '{s}' not found among {[n for _, n in cams]}; using index 0")
-    return 0
+    # a NAMED camera that is absent must never silently become a different
+    # camera (e.g. the laptop's) -- fail; run.sh retries every 10s until it
+    # reappears, and meanwhile no false "healthy coverage" data is produced
+    sys.exit(f"camera '{s}' not found (available: {[n for _, n in cams]}) -- "
+             "is it plugged in? retrying via run.sh, or fix camera.source")
 
 
 def set_config_source(config_path: str, value: str):
