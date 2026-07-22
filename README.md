@@ -39,8 +39,12 @@ cp .env.example .env  # once: add your TW_CENTRAL_DSN (node role)
 ```
 
 First run from a new terminal app will trigger the macOS camera-permission
-dialog — grant it. `python watch.py --list-cameras` probes device indices if
-the external webcam isn't index 0.
+dialog — grant it. The camera defaults to `auto`, which prefers an external/USB
+camera over a built-in laptop one. To choose explicitly:
+`python watch.py --list-cameras` shows each camera's name and index, and
+`python watch.py --pick-camera` opens a click-to-select preview of all cameras
+(writes your choice to config). You can also set `camera.source` to an index, a
+name substring (`"USB"`), or an `rtsp://` URL.
 
 ## Calibrate (do this once, with `--show`)
 
