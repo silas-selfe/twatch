@@ -51,6 +51,11 @@ RTSP_PATHS = [
     "/videoMain",                           # Foscam
     "/media/video1",
     "/ch01/0",
+    # generic no-name / XiongMai(XM)-style boards (common on cheap 5MP cams)
+    "/0", "/1", "/11", "/12",
+    "/live/ch0", "/live/ch00_0", "/av0_0", "/ch0_0.h264",
+    "/user=admin&password=&channel=1&stream=0.sdp",
+    "/user=admin&password=&channel=1&stream=1.sdp",
 ]
 
 WS_DISCOVERY_PROBE = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -226,6 +231,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--url", help="skip scanning; test this exact stream URL")
+    ap.add_argument("--host", help="probe one known camera IP across all RTSP "
+                    "path templates (use after Internet Sharing gives it an IP)")
     ap.add_argument("--user", help="camera/NVR username for RTSP auth")
     ap.add_argument("--password", help="password (omit to be prompted securely)")
     args = ap.parse_args()
@@ -246,6 +253,17 @@ def main():
         name = re.sub(r"[^a-z0-9]+", "-", redact(args.url).split("//")[-1].lower())[:40]
         save_preview(name, hit[0])
         candidates.append((name, args.url, w, h))
+    elif args.host:
+        print(f"probing {args.host} across {len(RTSP_PATHS)} RTSP path templates ...")
+        hit = probe_host(args.host, user, pw)
+        if not hit:
+            sys.exit(f"no readable stream on {args.host}. Check: reachable "
+                     "(ping it), right user/password, and H.264 (not H.265). "
+                     "If it pings but no path worked, tell me the model.")
+        url, (frame, w, h) = hit
+        save_preview(args.host.replace(".", "-"), frame)
+        candidates.append((args.host.replace(".", "-"), url, w, h))
+        print(f"  OK  {w}x{h}  {redact(url)}")
     else:
         print("scanning: ONVIF multicast + RTSP port probe on your /24 ...")
         hosts = sorted(onvif_discover() | scan_rtsp_hosts())
