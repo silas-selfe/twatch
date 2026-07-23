@@ -1,12 +1,22 @@
-# One camera node = this file + a site.yaml + a .env with TW_CENTRAL_DSN.
+# One camera node = this file + a site.yaml + a .env.
 #   docker compose up -d
 # Watchtower keeps the node on the latest image pushed to GHCR.
+#
+# Put the camera in .env as TW_CAMERA_SOURCE (one of):
+#   TW_CAMERA_SOURCE=rtsp://user:pass@CAM-IP:554/path   # network / IP camera (default)
+#   TW_CAMERA_SOURCE=0                                  # local USB camera -> ALSO uncomment
+#                                                       #   the `devices:` block below
+# plus TW_CENTRAL_DSN=postgres://node_...@host:5432/twatch?sslmode=require
 services:
   collector:
     image: ghcr.io/silas-selfe/twatch:latest
     restart: unless-stopped
-    devices:
-      - /dev/video0:/dev/video0          # the webcam (Linux/Pi)
+    environment:
+      TW_CAMERA_SOURCE: ${TW_CAMERA_SOURCE}
+    # USB camera only: uncomment and set the right index (ls /dev/video*).
+    # Leave commented for a network/RTSP camera (no passthrough needed).
+    # devices:
+    #   - /dev/video0:/dev/video0
     volumes:
       - ./site.yaml:/config/site.yaml:ro
       - twdata:/data
