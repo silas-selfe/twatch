@@ -13,7 +13,7 @@ camera:
   # Or set a device index (0,1,...), a name substring ("USB", "Logitech"),
   # or an rtsp:// URL. `watch.py --list-cameras` shows names;
   # `watch.py --pick-camera` opens a click-to-select preview.
-  source: "Webcam"           # your USB camera (UVC); never the FaceTime one
+  source: auto              # network cam URL is set in node/.env (TW_CAMERA_SOURCE)
   width: 1920
   height: 1080
 
