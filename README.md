@@ -46,6 +46,11 @@ camera over a built-in laptop one. To choose explicitly:
 (writes your choice to config). You can also set `camera.source` to an index, a
 name substring (`"USB"`), or an `rtsp://` URL.
 
+Watch extra cameras alongside the counted one (view only — never detected,
+counted, or shipped): `./run.sh --show --also-show 1,2,3`. On an NVR the bare
+channel numbers reuse the counted feed's URL with the channel swapped, so no
+credentials go on the command line; full `rtsp://` URLs also work.
+
 ## Calibrate (do this once, with `--show`)
 
 1. The orange vertical line is the count line (`counting.line_frac` in

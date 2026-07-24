@@ -200,6 +200,56 @@ def resolve_source(source):
              "is it plugged in? retrying via run.sh, or fix camera.source")
 
 
+def sibling_source(primary, spec):
+    """A view-only source. A bare number reuses the primary URL with the
+    channel swapped (rtsp://.../ch07/1 + '3' -> .../ch03/1), so NVR channels
+    need no credentials on the command line. Anything else is used verbatim."""
+    spec = str(spec).strip()
+    if spec.isdigit() and isinstance(primary, str):
+        m = re.search(r"/ch(\d+)(/|_)", primary)
+        if m:
+            width = len(m.group(1))
+            return (primary[:m.start(1)] + str(int(spec)).zfill(width)
+                    + primary[m.end(1):])
+        m = re.search(r"channel=(\d+)", primary)
+        if m:
+            return primary[:m.start(1)] + spec + primary[m.end(1):]
+    return spec
+
+
+def camera_wall(main_frame, extras, width=1280):
+    """Main (annotated) frame on top; view-only feeds tiled in a row below."""
+    def fit(img, w, h):
+        out = np.full((h, w, 3), 25, np.uint8)
+        if img is None:
+            cv2.putText(out, "no signal", (10, h // 2),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (120, 120, 120), 1)
+            return out
+        ih, iw = img.shape[:2]
+        sc = min(w / iw, h / ih)
+        rw, rh = max(int(iw * sc), 1), max(int(ih * sc), 1)
+        y0, x0 = (h - rh) // 2, (w - rw) // 2
+        out[y0:y0 + rh, x0:x0 + rw] = cv2.resize(img, (rw, rh))
+        return out
+
+    mh = int(width * main_frame.shape[0] / main_frame.shape[1])
+    top = cv2.resize(main_frame, (width, mh))
+    if not extras:
+        return top
+    n = len(extras)
+    tw = width // n
+    th = int(tw * 9 / 16)
+    row = np.full((th, width, 3), 25, np.uint8)
+    for i, (label, img) in enumerate(extras):
+        tile = fit(img, tw, th)
+        cv2.rectangle(tile, (0, 0), (tw - 1, th - 1), (70, 70, 70), 1)
+        cv2.rectangle(tile, (0, 0), (tw, 18), (0, 0, 0), -1)
+        cv2.putText(tile, label[:28], (5, 13), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.42, (200, 200, 200), 1)
+        row[:, i * tw:i * tw + tile.shape[1]] = tile
+    return np.vstack([top, row])
+
+
 def set_config_source(config_path: str, value: str):
     """Persist camera.source in config.yaml, preserving comments."""
     text = Path(config_path).read_text()
@@ -322,6 +372,12 @@ class Camera:
             if self._stop.is_set():
                 return None, None
             time.sleep(0.002)
+
+    def peek(self):
+        """Non-blocking: newest frame we already have (or None). View-only
+        feeds use this so a slow/stalled camera can never hold up counting."""
+        with self._lock:
+            return (self._frame.copy() if self._frame is not None else None), self._ts
 
     def close(self):
         self._stop.set()
@@ -539,6 +595,10 @@ def main():
                     help="stop after N seconds (testing)")
     ap.add_argument("--source", default=None,
                     help="override camera: a video file path for backtesting")
+    ap.add_argument("--also-show", default=None, metavar="LIST",
+                    help="extra VIEW-ONLY feeds shown beside the counted one "
+                         "(comma-separated NVR channel numbers, e.g. 1,2,3, or "
+                         "full URLs). Never detected, tracked, counted, or shipped.")
     args = ap.parse_args()
 
     if args.list_cameras:
@@ -582,6 +642,22 @@ def main():
     frame, _ = cam.latest()
     frame_h, frame_w = frame.shape[:2]
     print(f"camera open: {frame_w}x{frame_h}")
+
+    # VIEW-ONLY feeds: displayed beside the counted camera, never fed to the
+    # model and never written to the database. Purely a monitor wall.
+    view_cams = []
+    if args.also_show and args.show:
+        primary_src = os.environ.get("TW_CAMERA_SOURCE") or cfg["camera"]["source"]
+        for spec in [x for x in args.also_show.split(",") if x.strip()]:
+            url = sibling_source(primary_src, spec)
+            label = f"ch{spec.strip()}" if spec.strip().isdigit() else redact(url)
+            try:
+                view_cams.append((label, Camera(url, frame_w, frame_h)))
+                print(f"view-only feed: {label} ({redact(url)})")
+            except Exception as e:
+                print(f"view-only feed {label} unavailable: {type(e).__name__}")
+    elif args.also_show:
+        print("--also-show needs --show (it only affects the live window)")
 
     con = dbm.connect(str(HERE / cfg["output"]["db"]))
     run_id = dbm.start_run(con, model_cfg["weights"], cfg)
@@ -661,12 +737,20 @@ def main():
                     disp = frame.copy()
                     cv2.line(disp, (line_x, 0), (line_x, frame_h),
                              (0, 200, 255), 2)
+                if view_cams:
+                    extras = []
+                    for label, vc in view_cams:
+                        vf, _ = vc.peek()
+                        extras.append((label, vf))
+                    disp = camera_wall(disp, extras)
                 cv2.imshow("trafficwatch", disp)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
     finally:
         dbm.end_run(con, run_id)
         cam.close()
+        for _lbl, vc in view_cams:
+            vc.close()
         if args.show:
             cv2.destroyAllWindows()
         total = sum(counter.counts.values())
