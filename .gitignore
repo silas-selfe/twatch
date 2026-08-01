@@ -11,9 +11,9 @@ yolo11s.pt
 # event snapshots: 3+ GB of images, privacy-sensitive -- stays local
 snapshots/
 
-# sqlite sidecars (transient; traffic.db itself IS committed)
-*.db-wal
-*.db-shm
+# local runtime data -- per-node, never committed (each node keeps its own
+# full-fidelity store; the central Postgres holds the shared summaries)
+node/data/
 
 # per-deployment files -- never committed
 site.yaml
