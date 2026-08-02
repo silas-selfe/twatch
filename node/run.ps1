@@ -20,11 +20,12 @@ if (Test-Path .env) {
 
 # block idle sleep while we run (display may still turn off) -- the
 # caffeinate of Windows. ES_CONTINUOUS | ES_SYSTEM_REQUIRED.
+# (values via [uint32]: PowerShell parses 0x80000001 as a negative Int32)
 Add-Type -Name Power -Namespace TW -MemberDefinition @'
 [DllImport("kernel32.dll")]
 public static extern uint SetThreadExecutionState(uint esFlags);
 '@
-[TW.Power]::SetThreadExecutionState(0x80000001) | Out-Null
+[TW.Power]::SetThreadExecutionState([uint32]2147483649) | Out-Null
 
 $shipper = $null
 if ($env:TW_CENTRAL_DSN) {
@@ -49,5 +50,5 @@ try {
     if ($shipper -and -not $shipper.HasExited) {
         Stop-Process -Id $shipper.Id -Force -ErrorAction SilentlyContinue
     }
-    [TW.Power]::SetThreadExecutionState(0x80000000) | Out-Null  # ES_CONTINUOUS: release
+    [TW.Power]::SetThreadExecutionState([uint32]2147483648) | Out-Null  # ES_CONTINUOUS: release
 }
