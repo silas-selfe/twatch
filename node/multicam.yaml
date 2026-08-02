@@ -1,7 +1,8 @@
 # multicam configuration -- which cameras fuse, how association behaves,
-# and where the world-space count gates sit. Coordinates are pixels on the
-# calibration reference image (multicam ref). Like config.yaml, values that
-# change data meaning belong here, not in code.
+# and where the world-space count gates sit. This site is GEO-calibrated
+# (watch_multi.py calibrate): world units are METERS, gates are lat/lon,
+# speeds are true m/s. Like config.yaml, values that change data meaning
+# belong here, not in code.
 
 label: "1206 block -- 2-camera fusion"
 
@@ -11,9 +12,10 @@ label: "1206 block -- 2-camera fusion"
 # tracks (street sliver, median 4 frames) caused false transitive merges.
 cameras: ["1", "3"]
 
+# legacy ref-px fallback only (geo sites render live tiles instead)
 ref: discovered/ref.PNG
 
-model:                    # live fusion (3 streams share the GPU)
+model:                    # live fusion (streams share the GPU)
   weights: yolo11s.pt
   imgsz: 640
   conf: 0.15
@@ -23,26 +25,20 @@ model_offline:            # replay validation (one stream at a time)
   weights: yolo11s.pt
   imgsz: 960
   conf: 0.15
-  device: auto            # mps (Apple) / cuda / cpu
+  device: auto
 
-# Distances/speeds below are WORLD units: METERS once cameras are
-# geo-calibrated (watch_multi.py calibrate -- preferred), reference PIXELS
-# for legacy screenshot calibrations (calibrate.py). This site is still
-# ref-px; after geo recalibration switch to the meter values in comments.
-association:
+association:              # METERS (geo world)
   bin_s: 0.25             # engine step / matching window (s)
-  gate_px: 35             # concurrent match gate      (geo: gate: 4)
-  tight_px: 12            # single-bin merge max       (geo: tight: 1.5)
+  gate: 4                 # concurrent match gate
+  tight: 1.5              # single-bin merge must be this tight
   min_votes: 2            # co-matched bins before a pair merges
   stitch_dt_s: 4          # max handoff gap (blind wedge between cams 1/3)
-  stitch_gate_px: 55      # predicted-position gate    (geo: stitch_gate: 6)
-  min_speed_px_s: 8       # anti-parked/jitter floor   (geo: min_speed: 1)
+  stitch_gate: 6          # gate on the velocity-predicted position
+  min_speed: 1            # m/s -- never stitch parked/jittering tracks
 
 counting:
-  min_travel_px: 60       # net path before counting   (geo: min_travel: 8)
-  gates:
-    # ref-px mode: a/b are reference-image pixels.
-    # geo mode: a/b are [lat, lon] pairs instead.
+  min_travel: 8           # meters of net path before a cluster may count
+  gates:                  # geo mode: a/b are [lat, lon]
     - id: mid-block
-      a: [700, 385]       # near-roadway crossing at the cam1/cam3 junction
-      b: [700, 490]
+      a: [39.0767108, -84.5146141]   # near-roadway crossing, cam1/cam3 junction
+      b: [39.0767862, -84.5146353]   # 8.5 m across parking + travel lanes
