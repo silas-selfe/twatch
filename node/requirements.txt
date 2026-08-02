@@ -6,5 +6,3 @@ openpyxl>=3.1
 pyobjc-framework-AVFoundation>=10; sys_platform == "darwin"
 pygrabber>=0.2; sys_platform == "win32"
 av>=12
-fastapi>=0.110      # multicam map console (watch_multi.py live)
-uvicorn>=0.30
