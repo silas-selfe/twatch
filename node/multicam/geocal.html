@@ -82,6 +82,10 @@ const map = L.map("mapEl", { zoomControl: true });
 L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
   attribution: "Imagery © Esri", maxZoom: 21, maxNativeZoom: 19
 }).addTo(map);
+// borders + place labels so you can actually find your site from orbit
+L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {
+  attribution: "Boundaries © Esri", maxZoom: 21, maxNativeZoom: 19
+}).addTo(map);
 
 async function init() {
   const cfg = await (await fetch("/config")).json();
