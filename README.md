@@ -9,7 +9,8 @@ Linux box) keeping full-fidelity data locally and shipping hourly summaries
 to a central Postgres (`twatch` database, `monitor_traffic` schema) with an
 idempotent store-and-forward protocol — offline nodes backfill safely when
 they reconnect. See [deploy/PI_SETUP.md](deploy/PI_SETUP.md) for bringing up
-a node, [deploy/IP_CAMERAS.md](deploy/IP_CAMERAS.md) for using existing
+a node ([deploy/WINDOWS_SETUP.md](deploy/WINDOWS_SETUP.md) for native
+Windows), [deploy/IP_CAMERAS.md](deploy/IP_CAMERAS.md) for using existing
 security/IP cameras, [central/schema.sql](central/schema.sql) for the central store, and
 [node/site.yaml.example](node/site.yaml.example) for per-camera identity/calibration.
 Images build multi-arch on every push (`ghcr.io/silas-selfe/twatch`);
@@ -37,6 +38,9 @@ cp .env.example .env  # once: add your TW_CENTRAL_DSN (node role)
 ./run.sh              # collector + hourly shipper; auto-restarts, blocks idle sleep
 ./run.sh --show       # with live annotated window (press q to quit)
 ```
+
+Windows: same flow with `.\run.ps1` — see
+[deploy/WINDOWS_SETUP.md](deploy/WINDOWS_SETUP.md).
 
 First run from a new terminal app will trigger the macOS camera-permission
 dialog — grant it. The camera defaults to `auto`, which prefers an external/USB

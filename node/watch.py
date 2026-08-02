@@ -40,9 +40,12 @@ import db as dbm
 
 HERE = Path(__file__).resolve().parent
 
-# camera backend per platform: AVFoundation on macOS, V4L2 on Linux (Pi)
+# camera backend per platform: AVFoundation on macOS, V4L2 on Linux (Pi),
+# DirectShow on Windows (its device order matches pygrabber's enumeration,
+# so names from camera_list() line up with cv2 indices)
 CAP_BACKEND = (cv2.CAP_AVFOUNDATION if sys.platform == "darwin"
                else cv2.CAP_V4L2 if sys.platform.startswith("linux")
+               else cv2.CAP_DSHOW if sys.platform == "win32"
                else cv2.CAP_ANY)
 
 
@@ -123,14 +126,25 @@ def open_source(source, width: int, height: int):
     return cap
 
 
-# built-in / laptop cameras -- de-prioritized so 'auto' prefers an external cam
-BUILTIN_RE = re.compile(r"facetime|built[\s-]?in|isight|integrated", re.I)
+# built-in / laptop / virtual cameras -- de-prioritized so 'auto' prefers a
+# real external cam (Windows: OBS/NVIDIA Broadcast register as devices too)
+BUILTIN_RE = re.compile(
+    r"facetime|built[\s-]?in|isight|integrated|virtual|obs|broadcast", re.I)
 
 
 def camera_list() -> list[tuple[int, str]]:
     """[(cv2 index, device name)] of local video cameras, best-effort named.
-    macOS: AVFoundation (index order matches cv2). Linux: /sys v4l names."""
-    if sys.platform == "darwin":
+    macOS: AVFoundation (index order matches cv2). Linux: /sys v4l names.
+    Windows: DirectShow via pygrabber (index order matches CAP_DSHOW)."""
+    if sys.platform == "win32":
+        try:
+            from pygrabber.dshow_graph import FilterGraph  # windows only
+            named = list(enumerate(FilterGraph().get_input_devices()))
+            if named:
+                return named
+        except Exception:
+            pass  # fall through to probing
+    elif sys.platform == "darwin":
         try:
             import AVFoundation  # pyobjc; macOS only
             devs = AVFoundation.AVCaptureDevice.devicesWithMediaType_(
