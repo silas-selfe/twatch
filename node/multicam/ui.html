@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>twatch multicam</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --bg:#101312; --panel:#181d1b; --line:#2a322f; --text:#e8ece9;
+          --muted:#93a09a; --accent:#ffb020; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--text);
+         font:14px/1.45 "Segoe UI", system-ui, sans-serif; height:100vh;
+         display:flex; flex-direction:column; overflow:hidden; }
+  header { display:flex; align-items:center; gap:14px; padding:10px 16px;
+           border-bottom:1px solid var(--line); flex:0 0 auto; }
+  header h1 { font-size:15px; font-weight:600; letter-spacing:.4px; }
+  header .pill { font-size:12px; color:var(--muted); border:1px solid var(--line);
+                 border-radius:99px; padding:2px 10px; }
+  header .pill.ok::before { content:"● "; color:#4cc38a; }
+  header .pill.bad::before { content:"● "; color:#e5484d; }
+  #clock { margin-left:auto; color:var(--muted); font-variant-numeric:tabular-nums; }
+  main { flex:1 1 auto; display:flex; min-height:0; }
+  #mapwrap { flex:1 1 auto; display:flex; align-items:center;
+             justify-content:center; padding:12px; min-width:0; }
+  canvas { max-width:100%; max-height:100%; border-radius:10px;
+           border:1px solid var(--line); }
+  aside { flex:0 0 300px; border-left:1px solid var(--line); padding:14px;
+          overflow-y:auto; background:var(--panel); }
+  aside h2 { font-size:11px; text-transform:uppercase; letter-spacing:1.2px;
+             color:var(--muted); margin:14px 0 8px; }
+  aside h2:first-child { margin-top:0; }
+  .count { display:flex; justify-content:space-between; padding:6px 0;
+           border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
+  .count b { color:var(--accent); font-size:18px; }
+  .obj { display:flex; gap:8px; align-items:center; padding:5px 0;
+         font-variant-numeric:tabular-nums; }
+  .obj .dot { width:10px; height:10px; border-radius:50%; flex:0 0 auto; }
+  .obj .cams { margin-left:auto; color:var(--muted); font-size:12px; }
+  .ev { color:var(--muted); font-size:12px; padding:3px 0; }
+  .ev b { color:var(--text); font-weight:600; }
+  footer { flex:0 0 auto; display:flex; gap:10px; padding:10px 16px;
+           border-top:1px solid var(--line); }
+  footer .cam { flex:1; min-width:0; }
+  footer img { width:100%; border-radius:8px; border:1px solid var(--line);
+               display:block; }
+  footer .lbl { font-size:11px; color:var(--muted); margin-bottom:4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="site">twatch multicam</h1>
+  <span id="campills"></span>
+  <span id="clock"></span>
+</header>
+<main>
+  <div id="mapwrap"><canvas id="map"></canvas></div>
+  <aside>
+    <h2>Gate counts</h2><div id="counts"><div class="ev">none yet</div></div>
+    <h2>Live objects</h2><div id="objs"><div class="ev">none in view</div></div>
+    <h2>Recent crossings</h2><div id="events"><div class="ev">none yet</div></div>
+  </aside>
+</main>
+<footer id="thumbs"></footer>
+<script>
+"use strict";
+const camColors = { "1": "#e5484d", "2": "#4cc38a", "3": "#529bf5" };
+const gidColor = g => `hsl(${(g * 137.508) % 360} 75% 62%)`;
+let meta = null, ref = new Image();
+const cv = document.getElementById("map"), ctx = cv.getContext("2d");
+
+async function init() {
+  meta = await (await fetch("/meta")).json();
+  document.getElementById("site").textContent = meta.site;
+  cv.width = meta.ref.w; cv.height = meta.ref.h;
+  ref.src = "/ref.jpg";
+  const tb = document.getElementById("thumbs");
+  tb.innerHTML = meta.cameras.map(c =>
+    `<div class="cam"><div class="lbl" style="color:${camColors[c] || 'var(--muted)'}">camera ${c}</div>
+     <img id="thumb${c}" alt="camera ${c} live annotated view"></div>`).join("");
+  setInterval(refreshThumbs, 1200);
+  refreshThumbs();
+  poll();
+}
+
+function refreshThumbs() {
+  for (const c of meta.cameras) {
+    const img = document.getElementById("thumb" + c);
+    if (img) img.src = `/thumb/${c}?t=${Date.now()}`;
+  }
+}
+
+function draw(state) {
+  ctx.drawImage(ref, 0, 0);
+  ctx.save();
+  for (const [c, poly] of Object.entries(meta.footprints)) {
+    ctx.beginPath();
+    poly.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+    ctx.closePath();
+    ctx.strokeStyle = (camColors[c] || "#888") + "cc";
+    ctx.lineWidth = 2; ctx.setLineDash([7, 5]); ctx.stroke();
+    ctx.fillStyle = (camColors[c] || "#888") + "14"; ctx.fill();
+  }
+  ctx.setLineDash([]);
+  for (const g of meta.gates) {
+    ctx.beginPath(); ctx.moveTo(g.a[0], g.a[1]); ctx.lineTo(g.b[0], g.b[1]);
+    ctx.strokeStyle = "#ffb020"; ctx.lineWidth = 4; ctx.stroke();
+    ctx.font = "bold 15px system-ui"; ctx.fillStyle = "#ffb020";
+    ctx.fillText(g.id, g.a[0] + 8, g.a[1] - 8);
+  }
+  for (const o of state.objects) {
+    const col = gidColor(o.gid);
+    if (o.trail.length > 1) {
+      ctx.beginPath();
+      o.trail.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+      ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.globalAlpha = .8;
+      ctx.stroke(); ctx.globalAlpha = 1;
+    }
+    ctx.beginPath(); ctx.arc(o.x, o.y, 7, 0, 7);
+    ctx.fillStyle = col; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = "#0009"; ctx.stroke();
+    ctx.font = "bold 14px system-ui"; ctx.fillStyle = col;
+    ctx.strokeText(`${o.gid}`, o.x + 10, o.y - 10);
+    ctx.fillText(`${o.gid}`, o.x + 10, o.y - 10);
+  }
+  ctx.restore();
+}
+
+function side(state) {
+  const counts = document.getElementById("counts");
+  const rows = [];
+  for (const [g, dirs] of Object.entries(state.counts))
+    for (const [d, n] of Object.entries(dirs))
+      rows.push(`<div class="count"><span>${g} · ${d}</span><b>${n}</b></div>`);
+  counts.innerHTML = rows.length ? rows.join("") : '<div class="ev">none yet</div>';
+
+  const objs = document.getElementById("objs");
+  objs.innerHTML = state.objects.length ? state.objects.map(o =>
+    `<div class="obj"><span class="dot" style="background:${gidColor(o.gid)}"></span>
+     <span>#${o.gid} ${o.cls}</span><span>${o.speed} px/s</span>
+     <span class="cams">${o.cams.map(c => "c" + c).join("+")}</span></div>`)
+    .join("") : '<div class="ev">none in view</div>';
+
+  const evs = document.getElementById("events");
+  const list = state.events.slice().reverse().slice(0, 10);
+  evs.innerHTML = list.length ? list.map(e => {
+    const dt = new Date(e.t * 1000).toLocaleTimeString();
+    return `<div class="ev">${dt} <b>${e.cls}</b> #${e.gid} ${e.dir} (${e.cams.map(c => "c" + c).join("+")})</div>`;
+  }).join("") : '<div class="ev">none yet</div>';
+
+  document.getElementById("campills").innerHTML = Object.entries(state.cams)
+    .map(([c, s]) => `<span class="pill ${s.alive ? "ok" : "bad"}">cam ${c} · ${s.fps} fps</span>`)
+    .join(" ");
+  document.getElementById("clock").textContent =
+    new Date(state.t * 1000).toLocaleTimeString();
+}
+
+async function poll() {
+  try {
+    const state = await (await fetch("/state")).json();
+    if (ref.complete) draw(state);
+    side(state);
+  } catch (e) { /* server restarting */ }
+  setTimeout(poll, 200);
+}
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+﻿# multicam configuration -- which cameras fuse, how association behaves,
+# and where the world-space count gates sit. Coordinates are pixels on the
+# calibration reference image (multicam ref). Like config.yaml, values that
+# change data meaning belong here, not in code.
+
+label: "1206 block -- 3-camera fusion"
+
+# NVR channels; stream URLs derive from TW_CAMERA_SOURCE (node/.env) the
+# same way --also-show does. Each needs cameras/cam<N>/calibration.yaml.
+cameras: ["1", "2", "3"]
+
+ref: discovered/ref.PNG
+
+model:                    # live fusion (3 streams share the GPU)
+  weights: yolo11s.pt
+  imgsz: 640
+  conf: 0.15
+  device: auto            # mps (Apple) / cuda / cpu
+
+model_offline:            # replay validation (one stream at a time)
+  weights: yolo11s.pt
+  imgsz: 960
+  conf: 0.15
+  device: auto            # mps (Apple) / cuda / cpu
+
+association:
+  bin_s: 0.25             # engine step / matching window (s)
+  gate_px: 35             # concurrent match gate (ref px)
+  tight_px: 12            # single-bin merge must be this tight
+  min_votes: 2            # co-matched bins before a pair merges
+  stitch_dt_s: 4          # max handoff gap (blind wedge between cams 1/3)
+  stitch_gate_px: 55      # gate on the velocity-predicted position
+  min_speed_px_s: 8       # never stitch parked/jittering tracks
+
+counting:
+  min_travel_px: 60       # net path before a cluster may count (anti-jitter)
+  gates:
+    - id: mid-block
+      a: [700, 385]       # near-roadway crossing at the cam1/cam3 junction
+      b: [700, 490]
+
+# Set after measuring a known distance on the reference image; unlocks m/s.
+meters_per_ref_px: null
