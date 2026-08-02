@@ -74,18 +74,20 @@ GEOREF = NODE / "cameras" / "georef.yaml"
 REF_IMG = NODE / "discovered" / "ref.PNG"
 
 
-def _fit_similarity(px, world):
-    """Least-squares similarity (rotation+scale+translation) screenshot-px ->
-    local meters. A map screenshot shares the map's projection, so this is
-    exact up to click noise -- no perspective needed."""
+def _fit_affine(px, world):
+    """Least-squares affine screenshot-px -> local meters. Affine (not a
+    similarity) because pixel y points down while north points up -- the
+    mapping includes a reflection -- and a slightly oblique screenshot adds
+    shear a similarity cannot express. 3 pairs = exact, 4+ = error signal."""
     rows, rhs = [], []
     for (x, y), (X, Y) in zip(px, world):
-        rows += [[x, -y, 1, 0], [y, x, 0, 1]]
+        rows += [[x, y, 1, 0, 0, 0], [0, 0, 0, x, y, 1]]
         rhs += [X, Y]
-    (a, b, tx, ty), *_ = np.linalg.lstsq(np.float64(rows), np.float64(rhs),
-                                         rcond=None)
+    (p, q, tx, r, s, ty), *_ = np.linalg.lstsq(
+        np.float64(rows), np.float64(rhs), rcond=None)
     def apply(x, y):
-        return a * x - b * y + tx, b * x + a * y + ty
+        # plain floats: these flow into yaml.safe_dump, which refuses numpy
+        return float(p * x + q * y + tx), float(r * x + s * y + ty)
     return apply
 
 
@@ -136,8 +138,8 @@ def create_app(cameras: list[str]) -> FastAPI:
         similarity from screenshot px to local meters, emit the three
         corner lat/lons the rotated image overlay needs."""
         n = min(len(p.points_image), len(p.points_latlon))
-        if n < 2:
-            return {"ok": False, "error": f"need 2+ pairs (3 recommended), have {n}"}
+        if n < 3:
+            return {"ok": False, "error": f"need 3+ pairs (4 recommended), have {n}"}
         img = cv2.imread(str(REF_IMG))
         if img is None:
             return {"ok": False, "error": "discovered/ref.PNG not found"}
@@ -145,7 +147,7 @@ def create_app(cameras: list[str]) -> FastAPI:
         anchor = _existing_anchor() or list(p.points_latlon[0])
         frame = GeoFrame(*anchor)
         world = [frame.to_local(lat, lon) for lat, lon in p.points_latlon[:n]]
-        apply = _fit_similarity(p.points_image[:n], world)
+        apply = _fit_affine(p.points_image[:n], world)
         err = [float(np.hypot(*(np.subtract(apply(x, y), wpt))))
                for (x, y), wpt in zip(p.points_image[:n], world)]
         corners = {k: list(frame.to_latlon(*apply(x, y)))

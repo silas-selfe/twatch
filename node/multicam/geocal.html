@@ -223,7 +223,11 @@ document.getElementById("save").onclick = async () => {
     const res = await (await fetch("/georef", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body) })).json();
-    if (!res.ok) { statusEl.textContent = "error: " + res.error; return; }
+    if (!res.ok) {
+      statusEl.textContent = "error: " + (res.error || res.detail ||
+                                          "server error -- see its log");
+      return;
+    }
     placeOverlay(res);
     statusEl.textContent = "overlay placed (fit " +
       res.fit_err_m.join(" / ") + " m). Now calibrate cameras against it.";
