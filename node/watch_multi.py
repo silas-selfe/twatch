@@ -3,13 +3,16 @@ plane. Companion to watch.py (single-camera counting): overlapping cameras
 are fused into global object identities, counting happens in world space,
 and a local map UI shows the physical space live.
 
+  python watch_multi.py calibrate [--port 8798]  # browser geo calibration
   python watch_multi.py record [--seconds 150]   # synchronized clips
   python watch_multi.py replay [--retrack]       # validate assoc. offline
   python watch_multi.py live [--port 8799] [--no-web]
 
-Prerequisites: calibrate.py run per camera (cameras/<id>/calibration.yaml),
-multicam.yaml for cameras/model/association/gates, TW_CAMERA_SOURCE in
-node/.env (channel siblings are derived the same way --also-show does)."""
+Prerequisites: each camera calibrated (browser `calibrate` against real
+satellite tiles -> lat/lon, preferred; or legacy calibrate.py against a
+local screenshot), multicam.yaml for cameras/model/association/gates,
+TW_CAMERA_SOURCE in node/.env (channel siblings derive the same way
+--also-show does)."""
 from __future__ import annotations
 
 import argparse
@@ -24,6 +27,9 @@ def main():
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
+    p_cal = sub.add_parser("calibrate",
+                           help="browser calibration vs satellite tiles")
+    p_cal.add_argument("--port", type=int, default=8798)
     p_rec = sub.add_parser("record", help="synchronized clips from all cameras")
     p_rec.add_argument("--seconds", type=float, default=150)
     p_rep = sub.add_parser("replay", help="run the engine over recorded clips")
@@ -39,7 +45,10 @@ def main():
     cameras = [str(c) for c in cfg["cameras"]]
     ref_path = NODE / cfg["ref"]
 
-    if args.cmd == "record":
+    if args.cmd == "calibrate":
+        from multicam.geocal import serve as cal_serve
+        cal_serve(cameras, args.port)
+    elif args.cmd == "record":
         from multicam.record import record
         record(cameras, args.seconds)
     elif args.cmd == "replay":

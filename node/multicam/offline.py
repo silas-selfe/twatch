@@ -73,9 +73,14 @@ def replay(cameras, cfg, ref_path: Path, render=True):
             rows.append((float(r["t"]), r["cam"], int(r["tid"]),
                          int(r["cls"]), float(r["wx"]), float(r["wy"])))
     rows.sort()
+    from .fusion import world_gates
+    from .geometry import site_frame
+    cals = load_calibrations(cameras)
+    counting = cfg.get("counting", {})
     assoc = dict(cfg.get("association", {}))
-    assoc["min_travel_px"] = cfg.get("counting", {}).get("min_travel_px", 60)
-    eng = Engine(assoc, gates=cfg.get("counting", {}).get("gates", []))
+    assoc["min_travel"] = counting.get(
+        "min_travel", counting.get("min_travel_px", 60))
+    eng = Engine(assoc, gates=world_gates(cfg, site_frame(cals)))
 
     t0 = rows[0][0]
     bin_s = eng.bin_s

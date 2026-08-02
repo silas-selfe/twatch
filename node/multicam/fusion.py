@@ -20,8 +20,22 @@ sys.path.insert(0, str(NODE))
 
 from watch import sibling_source, redact, PyAVCapture  # noqa: E402
 from .associate import Engine  # noqa: E402
-from .geometry import load_calibrations, resolve_device  # noqa: E402
+from .geometry import load_calibrations, resolve_device, site_frame  # noqa: E402
 from .record import primary_source  # noqa: E402
+
+
+def world_gates(cfg: dict, frame) -> list:
+    """Count gates in world units. Geo sites write gates as lat/lon pairs;
+    ref-px sites as reference pixels."""
+    gates = []
+    for g in cfg.get("counting", {}).get("gates", []):
+        g = dict(g)
+        if frame is not None:
+            ax, ay = frame.to_local(*g["a"])
+            bx, by = frame.to_local(*g["b"])
+            g["a"], g["b"] = [ax, ay], [bx, by]
+        gates.append(g)
+    return gates
 
 CLASS_IDS = [0, 1, 2, 3, 5, 7]
 
@@ -121,11 +135,12 @@ class Fusion:
         self.cfg = cfg
         self.cameras = [str(c) for c in cfg.get("cameras", [])]
         self.cals = load_calibrations(self.cameras)
+        self.frame = site_frame(self.cals)   # None -> legacy ref-px world
+        counting = cfg.get("counting", {})
         assoc = dict(cfg.get("association", {}))
-        assoc["min_travel_px"] = cfg.get("counting", {}).get(
-            "min_travel_px", 60)
-        self.engine = Engine(assoc,
-                             gates=cfg.get("counting", {}).get("gates", []))
+        assoc["min_travel"] = counting.get(
+            "min_travel", counting.get("min_travel_px", 60))
+        self.engine = Engine(assoc, gates=world_gates(cfg, self.frame))
         self.elock = threading.Lock()
         src = primary_source()
         self.workers = [

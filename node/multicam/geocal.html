@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>twatch geo calibration</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { --bg:#101312; --panel:#181d1b; --line:#2a322f; --text:#e8ece9;
+          --muted:#93a09a; --accent:#ffb020; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--text); height:100vh;
+         font:14px/1.45 "Segoe UI", system-ui, sans-serif;
+         display:flex; flex-direction:column; overflow:hidden; }
+  header { display:flex; align-items:center; gap:12px; padding:10px 16px;
+           border-bottom:1px solid var(--line); flex:0 0 auto; }
+  header h1 { font-size:15px; font-weight:600; }
+  select, button { background:var(--panel); color:var(--text);
+                   border:1px solid var(--line); border-radius:8px;
+                   padding:6px 12px; font:inherit; cursor:pointer; }
+  button.primary { background:var(--accent); color:#1a1205; font-weight:600;
+                   border-color:var(--accent); }
+  button:disabled { opacity:.45; cursor:default; }
+  #status { color:var(--muted); margin-left:auto; }
+  #turn { font-weight:600; color:var(--accent); }
+  main { flex:1 1 auto; display:flex; min-height:0; }
+  #left, #mappane { flex:1 1 50%; min-width:0; position:relative; }
+  #left { border-right:1px solid var(--line); display:flex;
+          align-items:center; justify-content:center; background:#000;
+          overflow:hidden; }
+  #camwrap { position:relative; }
+  #camimg { display:block; max-width:100%; max-height:100%; cursor:crosshair; }
+  #camwrap .pt, .leaflet-container .ptlbl { pointer-events:none; }
+  #camwrap .pt { position:absolute; transform:translate(-50%,-50%);
+        width:14px; height:14px; border-radius:50%; border:2px solid #fff;
+        display:flex; align-items:center; justify-content:center;
+        font-size:9px; font-weight:700; color:#fff; text-shadow:0 0 3px #000; }
+  #mapEl { position:absolute; inset:0; background:#000; }
+  footer { flex:0 0 auto; padding:10px 16px; border-top:1px solid var(--line);
+           display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+  footer .hint { color:var(--muted); font-size:13px; }
+  #pairs { display:flex; gap:6px; flex-wrap:wrap; }
+  .chip { border:1px solid var(--line); border-radius:99px; padding:2px 10px;
+          font-size:12px; color:var(--muted); }
+  .chip.good { border-color:#4cc38a; color:#4cc38a; }
+  .chip.bad { border-color:#e5484d; color:#e5484d; }
+</style>
+</head>
+<body>
+<header>
+  <h1>geo calibration</h1>
+  <select id="camsel"></select>
+  <span>click: <span id="turn">camera</span></span>
+  <button id="undo">undo</button>
+  <button id="clear">clear</button>
+  <button id="save" class="primary" disabled>save (0 pairs)</button>
+  <span id="status">loading…</span>
+</header>
+<main>
+  <div id="left"><div id="camwrap"><img id="camimg" alt="camera still"></div></div>
+  <div id="mappane"><div id="mapEl"></div></div>
+</main>
+<footer>
+  <span class="hint">Click a GROUND point in the camera (lane-dash end,
+    curb corner, manhole), then the same spot on the satellite. 6–8 pairs,
+    spread across the road, lower ⅔ of the camera frame. Zoom the map all
+    the way in before clicking.</span>
+  <div id="pairs"></div>
+</footer>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+"use strict";
+const colors = ["#e5484d","#4cc38a","#529bf5","#ffb020","#b672e8",
+                "#3ecfd4","#f076a8","#a3be5c","#e8985a","#7f8ef2"];
+let cams = [], cam = null, anchor = null;
+let imgPts = [], llPts = [], camMarks = [], mapMarks = [], projMarks = [];
+const img = document.getElementById("camimg");
+const wrap = document.getElementById("camwrap");
+const statusEl = document.getElementById("status");
+
+const map = L.map("mapEl", { zoomControl: true });
+L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+  attribution: "Imagery © Esri", maxZoom: 21, maxNativeZoom: 19
+}).addTo(map);
+
+async function init() {
+  const cfg = await (await fetch("/config")).json();
+  cams = cfg.cameras; anchor = cfg.anchor;
+  const sel = document.getElementById("camsel");
+  sel.innerHTML = cams.map(c => {
+    const st = cfg.calibrated[c];
+    const tag = st ? (st.mode === "geo" ? " ✓ geo" : " (ref-px)") : "";
+    return `<option value="${c}">camera ${c}${tag}</option>`;
+  }).join("");
+  sel.onchange = () => pick(sel.value);
+  if (anchor) map.setView(anchor, 19);
+  else map.setView([39.5, -98.35], 4);  // find your site, zoom in
+  pick(cams[0]);
+}
+
+function pick(c) {
+  cam = c; clearAll();
+  img.src = `/still/${c}?t=${Date.now()}`;
+  statusEl.textContent = `camera ${c}: click point 1 in the camera`;
+}
+
+function turnLabel() {
+  const t = document.getElementById("turn");
+  const n = Math.min(imgPts.length, llPts.length) + 1;
+  if (imgPts.length > llPts.length) {
+    t.textContent = "satellite"; statusEl.textContent =
+      `now click point ${llPts.length + 1} on the satellite`;
+  } else {
+    t.textContent = "camera"; statusEl.textContent =
+      `click point ${n} in the camera`;
+  }
+  const btn = document.getElementById("save");
+  const pairs = Math.min(imgPts.length, llPts.length);
+  btn.textContent = `save (${pairs} pairs)`;
+  btn.disabled = pairs < 4;
+}
+
+img.onclick = e => {
+  if (imgPts.length > llPts.length) return;   // it's the map's turn
+  const r = img.getBoundingClientRect();
+  const sx = img.naturalWidth / r.width, sy = img.naturalHeight / r.height;
+  const px = (e.clientX - r.left) * sx, py = (e.clientY - r.top) * sy;
+  imgPts.push([px, py]);
+  const d = document.createElement("div");
+  d.className = "pt"; d.textContent = imgPts.length;
+  d.style.background = colors[(imgPts.length - 1) % colors.length];
+  d.style.left = (e.clientX - r.left) + "px";
+  d.style.top = (e.clientY - r.top) + "px";
+  wrap.appendChild(d); camMarks.push(d);
+  turnLabel();
+};
+
+map.on("click", e => {
+  if (imgPts.length <= llPts.length) return;  // it's the camera's turn
+  llPts.push([e.latlng.lat, e.latlng.lng]);
+  const m = L.circleMarker(e.latlng, {
+    radius: 7, color: "#fff", weight: 2, fillOpacity: 1,
+    fillColor: colors[(llPts.length - 1) % colors.length]
+  }).addTo(map);
+  m.bindTooltip(String(llPts.length), { permanent: true, direction: "top",
+                                        className: "ptlbl" });
+  mapMarks.push(m);
+  turnLabel();
+});
+
+document.getElementById("undo").onclick = () => {
+  if (llPts.length === imgPts.length && llPts.length) {
+    llPts.pop(); map.removeLayer(mapMarks.pop());
+  } else if (imgPts.length) {
+    imgPts.pop(); camMarks.pop().remove();
+  }
+  turnLabel();
+};
+function clearAll() {
+  imgPts = []; llPts = [];
+  camMarks.forEach(d => d.remove()); camMarks = [];
+  mapMarks.forEach(m => map.removeLayer(m)); mapMarks = [];
+  projMarks.forEach(m => map.removeLayer(m)); projMarks = [];
+  turnLabel();
+}
+document.getElementById("clear").onclick = clearAll;
+
+document.getElementById("save").onclick = async () => {
+  const n = Math.min(imgPts.length, llPts.length);
+  const res = await (await fetch("/save", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cam, points_image: imgPts.slice(0, n),
+                           points_latlon: llPts.slice(0, n) })
+  })).json();
+  if (!res.ok) { statusEl.textContent = "error: " + res.error; return; }
+  anchor = res.anchor;
+  projMarks.forEach(m => map.removeLayer(m)); projMarks = [];
+  res.projected_latlon.forEach((ll, i) => {
+    projMarks.push(L.circleMarker(ll, {
+      radius: 4, color: "#000", weight: 1, fillOpacity: 1, fillColor: "#fff"
+    }).addTo(map));
+  });
+  const pairs = document.getElementById("pairs");
+  pairs.innerHTML = res.per_point_m.map((e, i) =>
+    `<span class="chip ${e <= 1.5 ? "good" : "bad"}">${i + 1}: ${e} m</span>`
+  ).join("");
+  statusEl.textContent = `saved camera ${cam} -- mean ${res.err_mean_m} m, ` +
+    `max ${res.err_max_m} m. White dots = the fit; re-click bad pairs if any.`;
+};
+init();
+</script>
+</body>
+</html>

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>twatch multicam</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root { --bg:#101312; --panel:#181d1b; --line:#2a322f; --text:#e8ece9;
           --muted:#93a09a; --accent:#ffb020; }
@@ -20,10 +21,12 @@
   header .pill.bad::before { content:"● "; color:#e5484d; }
   #clock { margin-left:auto; color:var(--muted); font-variant-numeric:tabular-nums; }
   main { flex:1 1 auto; display:flex; min-height:0; }
-  #mapwrap { flex:1 1 auto; display:flex; align-items:center;
-             justify-content:center; padding:12px; min-width:0; }
+  #mapwrap { flex:1 1 auto; position:relative; min-width:0; }
+  #cv-holder { position:absolute; inset:0; display:flex; align-items:center;
+               justify-content:center; padding:12px; }
   canvas { max-width:100%; max-height:100%; border-radius:10px;
            border:1px solid var(--line); }
+  #geoEl { position:absolute; inset:0; background:#000; }
   aside { flex:0 0 300px; border-left:1px solid var(--line); padding:14px;
           overflow-y:auto; background:var(--panel); }
   aside h2 { font-size:11px; text-transform:uppercase; letter-spacing:1.2px;
@@ -44,6 +47,8 @@
   footer img { width:100%; border-radius:8px; border:1px solid var(--line);
                display:block; }
   footer .lbl { font-size:11px; color:var(--muted); margin-bottom:4px; }
+  .gidlbl { background:none; border:none; box-shadow:none; font-weight:700;
+            font-size:13px; text-shadow:0 0 4px #000, 0 0 4px #000; }
 </style>
 </head>
 <body>
@@ -53,7 +58,7 @@
   <span id="clock"></span>
 </header>
 <main>
-  <div id="mapwrap"><canvas id="map"></canvas></div>
+  <div id="mapwrap"></div>
   <aside>
     <h2>Gate counts</h2><div id="counts"><div class="ev">none yet</div></div>
     <h2>Live objects</h2><div id="objs"><div class="ev">none in view</div></div>
@@ -61,24 +66,23 @@
   </aside>
 </main>
 <footer id="thumbs"></footer>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 "use strict";
 const camColors = { "1": "#e5484d", "2": "#4cc38a", "3": "#529bf5" };
 const gidColor = g => `hsl(${(g * 137.508) % 360} 75% 62%)`;
-let meta = null, ref = new Image();
-const cv = document.getElementById("map"), ctx = cv.getContext("2d");
+let meta = null, draw = () => {}, speedFmt = s => `${s} px/s`;
 
 async function init() {
   meta = await (await fetch("/meta")).json();
   document.getElementById("site").textContent = meta.site;
-  cv.width = meta.ref.w; cv.height = meta.ref.h;
-  ref.src = "/ref.jpg";
   const tb = document.getElementById("thumbs");
   tb.innerHTML = meta.cameras.map(c =>
     `<div class="cam"><div class="lbl" style="color:${camColors[c] || 'var(--muted)'}">camera ${c}</div>
      <img id="thumb${c}" alt="camera ${c} live annotated view"></div>`).join("");
   setInterval(refreshThumbs, 1200);
   refreshThumbs();
+  if (meta.mode === "geo") initGeo(); else initCanvas();
   poll();
 }
 
@@ -89,42 +93,92 @@ function refreshThumbs() {
   }
 }
 
-function draw(state) {
-  ctx.drawImage(ref, 0, 0);
-  ctx.save();
-  for (const [c, poly] of Object.entries(meta.footprints)) {
-    ctx.beginPath();
-    poly.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
-    ctx.closePath();
-    ctx.strokeStyle = (camColors[c] || "#888") + "cc";
-    ctx.lineWidth = 2; ctx.setLineDash([7, 5]); ctx.stroke();
-    ctx.fillStyle = (camColors[c] || "#888") + "14"; ctx.fill();
-  }
-  ctx.setLineDash([]);
-  for (const g of meta.gates) {
-    ctx.beginPath(); ctx.moveTo(g.a[0], g.a[1]); ctx.lineTo(g.b[0], g.b[1]);
-    ctx.strokeStyle = "#ffb020"; ctx.lineWidth = 4; ctx.stroke();
-    ctx.font = "bold 15px system-ui"; ctx.fillStyle = "#ffb020";
-    ctx.fillText(g.id, g.a[0] + 8, g.a[1] - 8);
-  }
-  for (const o of state.objects) {
-    const col = gidColor(o.gid);
-    if (o.trail.length > 1) {
-      ctx.beginPath();
-      o.trail.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
-      ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.globalAlpha = .8;
-      ctx.stroke(); ctx.globalAlpha = 1;
+/* ---------- geo mode: real satellite tiles ---------- */
+function initGeo() {
+  speedFmt = s => `${s.toFixed(1)} m/s · ${(s * 2.237).toFixed(0)} mph`;
+  const el = document.createElement("div");
+  el.id = "geoEl";
+  document.getElementById("mapwrap").appendChild(el);
+  const [lat0, lon0] = meta.anchor;
+  const mPerLon = 111320 * Math.cos(lat0 * Math.PI / 180);
+  const toLL = (x, y) => [lat0 + y / 110574, lon0 + x / mPerLon];
+  const map = L.map(el).setView([lat0, lon0], 19);
+  L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+    attribution: "Imagery © Esri", maxZoom: 21, maxNativeZoom: 19
+  }).addTo(map);
+  for (const [c, poly] of Object.entries(meta.footprints))
+    L.polygon(poly.map(p => toLL(p[0], p[1])), {
+      color: camColors[c] || "#888", weight: 2, dashArray: "6 5",
+      fillOpacity: .06 }).addTo(map);
+  for (const g of meta.gates)
+    L.polyline([toLL(...g.a), toLL(...g.b)],
+               { color: "#ffb020", weight: 5 }).addTo(map)
+     .bindTooltip(g.id, { permanent: true, direction: "top",
+                          className: "gidlbl" });
+  const live = L.layerGroup().addTo(map);
+  draw = state => {
+    live.clearLayers();
+    for (const o of state.objects) {
+      const col = gidColor(o.gid);
+      if (o.trail.length > 1)
+        L.polyline(o.trail.map(p => toLL(p[0], p[1])),
+                   { color: col, weight: 3, opacity: .8 }).addTo(live);
+      L.circleMarker(toLL(o.x, o.y), {
+        radius: 7, color: "#000", weight: 2, fillColor: col, fillOpacity: 1
+      }).addTo(live).bindTooltip(`#${o.gid}`, {
+        permanent: true, direction: "right", offset: [8, 0],
+        className: "gidlbl" });
     }
-    ctx.beginPath(); ctx.arc(o.x, o.y, 7, 0, 7);
-    ctx.fillStyle = col; ctx.fill();
-    ctx.lineWidth = 2; ctx.strokeStyle = "#0009"; ctx.stroke();
-    ctx.font = "bold 14px system-ui"; ctx.fillStyle = col;
-    ctx.strokeText(`${o.gid}`, o.x + 10, o.y - 10);
-    ctx.fillText(`${o.gid}`, o.x + 10, o.y - 10);
-  }
-  ctx.restore();
+  };
 }
 
+/* ---------- ref-px mode: local reference screenshot ---------- */
+function initCanvas() {
+  const holder = document.createElement("div");
+  holder.id = "cv-holder";
+  holder.innerHTML = '<canvas id="map"></canvas>';
+  document.getElementById("mapwrap").appendChild(holder);
+  const cv = document.getElementById("map"), ctx = cv.getContext("2d");
+  cv.width = meta.ref.w; cv.height = meta.ref.h;
+  const ref = new Image();
+  ref.src = "/ref.jpg";
+  draw = state => {
+    if (!ref.complete) return;
+    ctx.drawImage(ref, 0, 0);
+    for (const [c, poly] of Object.entries(meta.footprints)) {
+      ctx.beginPath();
+      poly.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+      ctx.closePath();
+      ctx.strokeStyle = (camColors[c] || "#888") + "cc";
+      ctx.lineWidth = 2; ctx.setLineDash([7, 5]); ctx.stroke();
+      ctx.fillStyle = (camColors[c] || "#888") + "14"; ctx.fill();
+    }
+    ctx.setLineDash([]);
+    for (const g of meta.gates) {
+      ctx.beginPath(); ctx.moveTo(g.a[0], g.a[1]); ctx.lineTo(g.b[0], g.b[1]);
+      ctx.strokeStyle = "#ffb020"; ctx.lineWidth = 4; ctx.stroke();
+      ctx.font = "bold 15px system-ui"; ctx.fillStyle = "#ffb020";
+      ctx.fillText(g.id, g.a[0] + 8, g.a[1] - 8);
+    }
+    for (const o of state.objects) {
+      const col = gidColor(o.gid);
+      if (o.trail.length > 1) {
+        ctx.beginPath();
+        o.trail.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+        ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.globalAlpha = .8;
+        ctx.stroke(); ctx.globalAlpha = 1;
+      }
+      ctx.beginPath(); ctx.arc(o.x, o.y, 7, 0, 7);
+      ctx.fillStyle = col; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = "#0009"; ctx.stroke();
+      ctx.font = "bold 14px system-ui"; ctx.fillStyle = col;
+      ctx.strokeText(`${o.gid}`, o.x + 10, o.y - 10);
+      ctx.fillText(`${o.gid}`, o.x + 10, o.y - 10);
+    }
+  };
+}
+
+/* ---------- shared sidebar + polling ---------- */
 function side(state) {
   const counts = document.getElementById("counts");
   const rows = [];
@@ -136,7 +190,7 @@ function side(state) {
   const objs = document.getElementById("objs");
   objs.innerHTML = state.objects.length ? state.objects.map(o =>
     `<div class="obj"><span class="dot" style="background:${gidColor(o.gid)}"></span>
-     <span>#${o.gid} ${o.cls}</span><span>${o.speed} px/s</span>
+     <span>#${o.gid} ${o.cls}</span><span>${speedFmt(o.speed)}</span>
      <span class="cams">${o.cams.map(c => "c" + c).join("+")}</span></div>`)
     .join("") : '<div class="ev">none in view</div>';
 
@@ -157,7 +211,7 @@ function side(state) {
 async function poll() {
   try {
     const state = await (await fetch("/state")).json();
-    if (ref.complete) draw(state);
+    draw(state);
     side(state);
   } catch (e) { /* server restarting */ }
   setTimeout(poll, 200);

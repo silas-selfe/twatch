@@ -75,15 +75,18 @@ def _seg_cross(p, q, a, b):
 
 class Engine:
     def __init__(self, cfg: dict, gates: list | None = None):
+        # distances/speeds are in WORLD units: meters for geo-calibrated
+        # sites, reference pixels for legacy ref-px sites. The old *_px key
+        # names remain accepted.
         a = cfg
         self.bin_s = a.get("bin_s", 0.25)
-        self.gate = a.get("gate_px", 35.0)
-        self.tight = a.get("tight_px", 12.0)
+        self.gate = a.get("gate", a.get("gate_px", 35.0))
+        self.tight = a.get("tight", a.get("tight_px", 12.0))
         self.min_votes = a.get("min_votes", 2)
         self.stitch_dt = a.get("stitch_dt_s", 4.0)
-        self.stitch_gate = a.get("stitch_gate_px", 55.0)
-        self.min_speed = a.get("min_speed_px_s", 8.0)
-        self.min_travel = a.get("min_travel_px", 60.0)
+        self.stitch_gate = a.get("stitch_gate", a.get("stitch_gate_px", 55.0))
+        self.min_speed = a.get("min_speed", a.get("min_speed_px_s", 8.0))
+        self.min_travel = a.get("min_travel", a.get("min_travel_px", 60.0))
         self.gates = gates or []          # [{id, a:[x,y], b:[x,y]}]
         self.counts = defaultdict(lambda: defaultdict(int))  # gate -> dir -> n
 

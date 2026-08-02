@@ -25,16 +25,22 @@ def create_app(fusion, ref_path: Path) -> FastAPI:
 
     @app.get("/meta")
     def meta():
-        import cv2
-        img = cv2.imread(str(ref_path))
-        return {
-            "ref": {"w": img.shape[1], "h": img.shape[0]},
+        out = {
+            "mode": "geo" if fusion.frame else "ref-px",
             "cameras": fusion.cameras,
-            "footprints": {c: fusion.cals[c].footprint().tolist()
+            "footprints": {c: fusion.cals[c].footprint()
+                           .astype(float).round(2).tolist()
                            for c in fusion.cameras},
             "gates": fusion.engine.gates,
             "site": fusion.cfg.get("label", "twatch multicam"),
         }
+        if fusion.frame:
+            out["anchor"] = [fusion.frame.lat0, fusion.frame.lon0]
+        else:
+            import cv2
+            img = cv2.imread(str(ref_path))
+            out["ref"] = {"w": img.shape[1], "h": img.shape[0]}
+        return out
 
     @app.get("/state")
     def state():
