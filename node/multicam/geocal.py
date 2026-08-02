@@ -65,6 +65,30 @@ class SavePayload(BaseModel):
     points_latlon: list[list[float]]  # [[lat, lon], ...]
 
 
+class GeorefPayload(BaseModel):
+    points_image: list[list[float]]   # screenshot pixels
+    points_latlon: list[list[float]]  # matching map points
+
+
+GEOREF = NODE / "cameras" / "georef.yaml"
+REF_IMG = NODE / "discovered" / "ref.PNG"
+
+
+def _fit_similarity(px, world):
+    """Least-squares similarity (rotation+scale+translation) screenshot-px ->
+    local meters. A map screenshot shares the map's projection, so this is
+    exact up to click noise -- no perspective needed."""
+    rows, rhs = [], []
+    for (x, y), (X, Y) in zip(px, world):
+        rows += [[x, -y, 1, 0], [y, x, 0, 1]]
+        rhs += [X, Y]
+    (a, b, tx, ty), *_ = np.linalg.lstsq(np.float64(rows), np.float64(rhs),
+                                         rcond=None)
+    def apply(x, y):
+        return a * x - b * y + tx, b * x + a * y + ty
+    return apply
+
+
 def create_app(cameras: list[str]) -> FastAPI:
     app = FastAPI(title="twatch geo calibration")
     ui = (HERE / "geocal.html").read_text(encoding="utf-8")
@@ -93,6 +117,45 @@ def create_app(cameras: list[str]) -> FastAPI:
         if data is None:
             return Response(status_code=404)
         return Response(data, media_type="image/jpeg")
+
+    @app.get("/refimg")
+    def refimg():
+        if not REF_IMG.exists():
+            return Response(status_code=404)
+        return Response(REF_IMG.read_bytes(), media_type="image/png")
+
+    @app.get("/georef")
+    def georef_get():
+        if not GEOREF.exists():
+            return {"exists": False}
+        return {"exists": True, **yaml.safe_load(GEOREF.read_text())}
+
+    @app.post("/georef")
+    def georef_save(p: GeorefPayload):
+        """Drape the trusted screenshot at its true position: fit a
+        similarity from screenshot px to local meters, emit the three
+        corner lat/lons the rotated image overlay needs."""
+        n = min(len(p.points_image), len(p.points_latlon))
+        if n < 2:
+            return {"ok": False, "error": f"need 2+ pairs (3 recommended), have {n}"}
+        img = cv2.imread(str(REF_IMG))
+        if img is None:
+            return {"ok": False, "error": "discovered/ref.PNG not found"}
+        h, w = img.shape[:2]
+        anchor = _existing_anchor() or list(p.points_latlon[0])
+        frame = GeoFrame(*anchor)
+        world = [frame.to_local(lat, lon) for lat, lon in p.points_latlon[:n]]
+        apply = _fit_similarity(p.points_image[:n], world)
+        err = [float(np.hypot(*(np.subtract(apply(x, y), wpt))))
+               for (x, y), wpt in zip(p.points_image[:n], world)]
+        corners = {k: list(frame.to_latlon(*apply(x, y)))
+                   for k, (x, y) in (("tl", (0, 0)), ("tr", (w, 0)),
+                                     ("bl", (0, h)))}
+        data = {"image": "/refimg", "anchor": anchor, "corners": corners,
+                "fit_err_m": [round(e, 2) for e in err]}
+        GEOREF.parent.mkdir(parents=True, exist_ok=True)
+        GEOREF.write_text(yaml.safe_dump(data, sort_keys=False))
+        return {"ok": True, **data}
 
     @app.post("/save")
     def save(p: SavePayload):
