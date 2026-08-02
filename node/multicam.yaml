@@ -4,7 +4,7 @@
 # speeds are true m/s. Like config.yaml, values that change data meaning
 # belong here, not in code.
 
-label: "1206 block -- 2-camera fusion"
+label: "W MLK Blvd -- 2-camera fusion"
 
 # NVR channels; stream URLs derive from TW_CAMERA_SOURCE (node/.env) the
 # same way --also-show does. Each needs cameras/cam<N>/calibration.yaml.
@@ -20,6 +20,8 @@ model:                    # live fusion (streams share the GPU)
   imgsz: 640
   conf: 0.15
   device: auto            # mps (Apple) / cuda / cpu
+  max_fps: 8              # per-camera inference cap -- the main compute knob;
+                          # a crossing takes ~3 s, so 8 fps = 20+ looks
 
 model_offline:            # replay validation (one stream at a time)
   weights: yolo11s.pt

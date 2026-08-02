@@ -84,6 +84,7 @@ class CameraWorker(threading.Thread):
         self.model_cfg = model_cfg
         self.grab = _LatestFrame(url, f"cam{cam_id}")
         self.annotated = None      # latest annotated jpeg bytes (UI thumbs)
+        self.thumb_until = 0.0     # render thumbs only while requested
         self.fps = 0.0
         self.stop = threading.Event()
         print(f"cam{cam_id}: {redact(url)}")
@@ -92,11 +93,15 @@ class CameraWorker(threading.Thread):
         from ultralytics import YOLO
         model = YOLO(str(NODE / self.model_cfg.get("weights", "yolo11s.pt")))
         self.grab.start()
-        last_t, last_thumb, n, t_fps = 0.0, 0.0, 0, time.time()
+        # counting doesn't need the stream's full rate: a vehicle takes ~3 s
+        # to cross, so even 8 fps gives ByteTrack 20+ looks at it. Capping
+        # inference is the single biggest compute knob on a node.
+        min_dt = 1.0 / float(self.model_cfg.get("max_fps", 8))
+        last_t, n, t_fps = 0.0, 0, time.time()
         while not self.stop.is_set():
             frame, t = self.grab.latest()
-            if frame is None or t <= last_t:
-                time.sleep(0.01)
+            if frame is None or t <= last_t or t - last_t < min_dt:
+                time.sleep(0.005)
                 continue
             last_t = t
             res = model.track(
@@ -119,8 +124,9 @@ class CameraWorker(threading.Thread):
             if time.time() - t_fps >= 5:
                 self.fps = n / (time.time() - t_fps)
                 n, t_fps = 0, time.time()
-            if time.time() - last_thumb >= 1.0:
-                last_thumb = time.time()
+            # annotated thumbnails only while someone is actually looking
+            # (the UI touches thumb_until on every request)
+            if time.time() < self.thumb_until:
                 thumb = cv2.resize(res.plot(), (480, 270))
                 ok, buf = cv2.imencode(".jpg", thumb,
                                        [cv2.IMWRITE_JPEG_QUALITY, 70])

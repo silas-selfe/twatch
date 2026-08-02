@@ -48,9 +48,14 @@ def create_app(fusion, ref_path: Path) -> FastAPI:
 
     @app.get("/thumb/{cam}")
     def thumb(cam: str):
+        import time
         for w in fusion.workers:
-            if w.cam_id == cam and w.annotated:
-                return Response(w.annotated, media_type="image/jpeg")
+            if w.cam_id == cam:
+                # demand signal: workers render annotated frames only while
+                # a viewer keeps requesting them
+                w.thumb_until = time.time() + 10
+                if w.annotated:
+                    return Response(w.annotated, media_type="image/jpeg")
         return Response(status_code=404)
 
     return app
