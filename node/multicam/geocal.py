@@ -132,6 +132,11 @@ def create_app(cameras: list[str]) -> FastAPI:
             return {"exists": False}
         return {"exists": True, **yaml.safe_load(GEOREF.read_text())}
 
+    @app.delete("/georef")
+    def georef_delete():
+        GEOREF.unlink(missing_ok=True)
+        return {"ok": True}
+
     @app.post("/georef")
     def georef_save(p: GeorefPayload):
         """Drape the trusted screenshot at its true position: fit a

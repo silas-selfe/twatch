@@ -57,6 +57,7 @@
   <h1>geo calibration</h1>
   <select id="camsel"></select>
   <button id="georefbtn" title="Drape your trusted screenshot over the map tiles">overlay screenshot</button>
+  <button id="georefdel" title="Remove the draped screenshot" hidden>remove overlay</button>
   <label class="ctl">overlay <input type="range" id="overlayop" min="0" max="100"
     value="85" disabled></label>
   <label class="ctl">rotate <input type="range" id="bearing" min="-180" max="180"
@@ -117,7 +118,16 @@ function placeOverlay(g) {
     L.latLng(g.corners.tl), L.latLng(g.corners.tr), L.latLng(g.corners.bl),
     { opacity: opSlider.value / 100, interactive: false }).addTo(map);
   opSlider.disabled = false;
+  document.getElementById("georefdel").hidden = false;
 }
+
+document.getElementById("georefdel").onclick = async () => {
+  await fetch("/georef", { method: "DELETE" });
+  if (overlay) { map.removeLayer(overlay); overlay = null; }
+  opSlider.disabled = true;
+  document.getElementById("georefdel").hidden = true;
+  statusEl.textContent = "overlay removed -- redo it via 'overlay screenshot'";
+};
 
 async function init() {
   const cfg = await (await fetch("/config")).json();
