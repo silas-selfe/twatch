@@ -338,6 +338,14 @@ def pick_camera(config_path: str):
     print(f"selected {name!r} (index {idx}); wrote camera.source to {config_path}")
 
 
+class CameraStalled(RuntimeError):
+    """No frames for too long. The grab thread keeps reconnecting on its
+    own, but the MAIN loop must never wait forever (a silent hang defeats
+    the supervisor's restart loop and looks like healthy uptime): raise,
+    exit nonzero, let run.sh/run.ps1 relaunch us. While the camera stays
+    dead, startup fails nonzero too -- honest downtime, retried forever."""
+
+
 class Camera:
     def __init__(self, source, width: int, height: int):
         self.source, self.width, self.height = source, width, height
@@ -356,16 +364,32 @@ class Camera:
         self._thread.start()
 
     def _loop(self):
+        # This thread must be unkillable: any exception here (a stream
+        # breaking mid-read at the IR/night switchover, av.open raising on
+        # a dead NVR during reconnect) used to silently end the thread --
+        # leaving latest() waiting forever and the whole node hung with no
+        # heartbeats and no exit for the supervisor to catch.
         fails = 0
         while not self._stop.is_set():
-            ok, frame = self.cap.read()
+            try:
+                ok, frame = self.cap.read()
+            except Exception:
+                ok, frame = False, None
             if not ok:
                 fails += 1
                 if fails >= 100:  # ~5s dead -> reopen (rtsp drops, NVR reboots)
                     print(f"camera {redact(self.source)} unresponsive -- reconnecting")
-                    self.cap.release()
+                    try:
+                        self.cap.release()
+                    except Exception:
+                        pass
                     time.sleep(2)
-                    self.cap = open_source(self.source, self.width, self.height)
+                    try:
+                        self.cap = open_source(self.source, self.width,
+                                               self.height)
+                    except Exception as e:
+                        print(f"camera {redact(self.source)} reopen failed "
+                              f"({type(e).__name__}) -- will retry")
                     fails = 0
                 time.sleep(0.05)
                 continue
@@ -375,9 +399,12 @@ class Camera:
                 self._ts = time.time()
                 self._seq += 1
 
-    def latest(self):
-        """Block until a frame newer than the last one handed out arrives."""
+    def latest(self, timeout: float = 60.0):
+        """Block until a frame newer than the last one handed out arrives.
+        Never forever: past `timeout` raise CameraStalled so the process
+        exits nonzero and the supervisor restarts it."""
         last = getattr(self, "_handed", -1)
+        deadline = time.time() + timeout
         while True:
             with self._lock:
                 if self._seq != last:
@@ -385,6 +412,9 @@ class Camera:
                     return self._frame.copy(), self._ts
             if self._stop.is_set():
                 return None, None
+            if time.time() >= deadline:
+                raise CameraStalled(
+                    f"no frames from {redact(self.source)} in {timeout:.0f}s")
             time.sleep(0.002)
 
     def peek(self):
@@ -693,6 +723,7 @@ def main():
     t_start = time.time()
     print(f"run {run_id} started; count line at x={line_x}px; ctrl-c to stop")
 
+    stall_exit = False
     try:
         while not stop.is_set():
             if args.max_seconds and time.time() - t_start > args.max_seconds:
@@ -760,6 +791,13 @@ def main():
                 cv2.imshow("trafficwatch", disp)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
+    except CameraStalled as e:
+        # grab thread is alive and reconnecting, but the stream has been
+        # dead for a while: exit NONZERO (run.sh/run.ps1 restarts us; while
+        # the camera stays down, startup keeps failing nonzero -- honest,
+        # heartbeat-free downtime instead of a silent hang)
+        print(f"FATAL: {e} -- exiting for supervisor restart")
+        stall_exit = True
     finally:
         dbm.end_run(con, run_id)
         cam.close()
@@ -771,6 +809,8 @@ def main():
         print(f"\nrun {run_id} ended: {frames} frames, {total} events")
         for (cls, direction), n in sorted(counter.counts.items()):
             print(f"  {cls:12s} {direction:15s} {n}")
+    if stall_exit:
+        sys.exit(3)
 
 
 if __name__ == "__main__":
