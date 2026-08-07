@@ -773,6 +773,13 @@ def main():
         print(f"daily recycle scheduled for "
               f"{datetime.fromtimestamp(recycle_at):%Y-%m-%d %H:%M}")
 
+    # inference-rate cap: counting does not need the stream's full rate (a
+    # crossing takes ~3 s; 10 fps = 30 looks), and uncapped inference makes
+    # GPU load track scene busyness -- spiky. Capped, it is low and steady.
+    max_fps = model_cfg.get("max_fps")
+    min_dt = 1.0 / float(max_fps) if max_fps else 0.0
+    last_infer = 0.0
+
     stall_exit = False
     recycle_exit = False
     try:
@@ -787,6 +794,9 @@ def main():
             frame, ts = cam.latest()
             if frame is None:
                 break
+            if min_dt and ts - last_infer < min_dt:
+                continue          # skip frame; next latest() blocks anyway
+            last_infer = ts
             t0 = time.time()
             results = model.track(
                 frame, persist=True, verbose=False,

@@ -22,6 +22,11 @@ model:
   imgsz: 960           # inference size; larger helps small/distant objects
   device: auto         # resolves to mps/cuda when available, else cpu (Pi)
   conf: 0.15           # low floor -- ByteTrack does its own high/low gating
+  max_fps: 10          # inference cap; a ~3 s crossing still gets 30 looks and
+                       # GPU load stays low and steady instead of tracking scene
+                       # busyness. null = process every frame. (track_buffer is
+                       # in FRAMES, so a lower fps stretches its wall-clock span
+                       # slightly -- harmless for counting.)
 
 classes:               # COCO classes to track
   person: 0
