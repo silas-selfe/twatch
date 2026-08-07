@@ -338,6 +338,41 @@ def pick_camera(config_path: str):
     print(f"selected {name!r} (index {idx}); wrote camera.source to {config_path}")
 
 
+def acquire_instance_lock(db_path: str):
+    """Exactly ONE collector per data dir. Two collectors on one camera
+    write interleaved events into the same db and the shipped counts come
+    out roughly doubled -- observed in production, never again. The OS
+    releases the lock when the process dies, so there are no stale locks.
+    Returns the handle; the caller must keep it referenced for life."""
+    lock_path = Path(db_path).parent / "collector.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(lock_path, "a+")
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+            fh.seek(0)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        sys.exit("another collector is already running on this data dir -- "
+                 "refusing to start a second one (it would double-count). "
+                 "Stop the running node first.")
+    return fh
+
+
+def next_daily(hhmm: str) -> float:
+    """Unix time of the next local occurrence of HH:MM."""
+    from datetime import timedelta
+    hh, mm = map(int, str(hhmm).split(":"))
+    now = datetime.now()
+    nxt = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+    if nxt <= now:
+        nxt += timedelta(days=1)
+    return nxt.timestamp()
+
+
 class CameraStalled(RuntimeError):
     """No frames for too long. The grab thread keeps reconnecting on its
     own, but the MAIN loop must never wait forever (a silent hang defeats
@@ -653,6 +688,8 @@ def main():
         return
 
     cfg = load_config(args.config)
+    db_path = str(HERE / cfg["output"]["db"])
+    _instance_lock = acquire_instance_lock(db_path)  # held for process life
     from ultralytics import YOLO  # deferred: slow import
 
     model_cfg = cfg["model"]
@@ -723,10 +760,29 @@ def main():
     t_start = time.time()
     print(f"run {run_id} started; count line at x={line_x}px; ctrl-c to stop")
 
+    # daily recycle: a long-lived process slowly accumulates state that was
+    # never meant to be permanent (tracker history, allocator fragmentation,
+    # GUI handles). Everything that matters is already on disk -- events,
+    # heartbeats, snapshots land in sqlite/files the moment they happen --
+    # so once a day we exit nonzero at a quiet hour and let the supervisor
+    # hand us a fresh process.
+    recycle_at = None
+    restart_hhmm = cfg["output"].get("daily_restart")
+    if restart_hhmm:
+        recycle_at = next_daily(restart_hhmm)
+        print(f"daily recycle scheduled for "
+              f"{datetime.fromtimestamp(recycle_at):%Y-%m-%d %H:%M}")
+
     stall_exit = False
+    recycle_exit = False
     try:
         while not stop.is_set():
             if args.max_seconds and time.time() - t_start > args.max_seconds:
+                break
+            if recycle_at and time.time() >= recycle_at:
+                print("daily recycle -- exiting for a fresh process "
+                      "(all data is on disk; supervisor restarts us)")
+                recycle_exit = True
                 break
             frame, ts = cam.latest()
             if frame is None:
@@ -811,6 +867,8 @@ def main():
             print(f"  {cls:12s} {direction:15s} {n}")
     if stall_exit:
         sys.exit(3)
+    if recycle_exit:
+        sys.exit(4)
 
 
 if __name__ == "__main__":

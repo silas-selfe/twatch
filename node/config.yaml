@@ -50,3 +50,6 @@ output:
   snapshot_keep_days: 14     # older event snapshots are deleted at startup
   scene_snapshot_minutes: 60 # periodic full-scene snapshot (camera-drift audit)
   heartbeat_seconds: 15      # liveness record cadence (downtime vs zero traffic)
+  daily_restart: "03:30"     # local HH:MM -- exit for a fresh process daily at a
+                             # quiet hour (supervisor relaunches; all data is on
+                             # disk already). null disables.
